@@ -1,0 +1,14 @@
+# 把 clip.example.com 换成你的域名（Caddy 自动申请/续期 HTTPS 证书）
+clip.example.com {
+	encode zstd gzip
+
+	# WebSocket 无需特殊配置，reverse_proxy 原生支持；本服务是纯 HTTP
+	reverse_proxy clipbox:3000
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}

@@ -1,0 +1,8 @@
+node_modules
+clipbox.db
+clipbox.db-shm
+clipbox.db-wal
+*.log
+.git
+.gitignore
+README.md

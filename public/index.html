@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipBox · 零知识剪切板</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.4rem; }
+  textarea, input { width: 100%; padding: .6rem; margin: .3rem 0; border: 1px solid #8886; border-radius: 8px; font: inherit; }
+  textarea { min-height: 140px; }
+  .row { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; margin: .6rem 0; }
+  /* 移动端：控件换行铺满，按钮易点 */
+  @media (max-width: 480px) {
+    body { margin: 1rem auto; }
+    .row { gap: .5rem; }
+    .row label, .row input, .row button, .row select { flex: 1 1 45%; }
+    .row button { flex: 1 1 100%; padding: .8rem; }
+    input#password { max-width: 100% !important; }
+    input#pwinput { max-width: 100% !important; }
+  }
+  button { padding: .55rem 1.2rem; border: 0; border-radius: 8px; background: #2563eb; color: #fff; font: inherit; cursor: pointer; }
+  button.secondary { background: #666; }
+  #share { font-family: monospace; word-break: break-all; background: #8881; padding: .6rem; border-radius: 8px; }
+  .hint { color: #888; font-size: .85rem; }
+  .err { color: #dc2626; }
+</style>
+</head>
+<body>
+<h1>📎 ClipBox · 零知识在线剪切板</h1>
+<p class="hint">文本在浏览器内用 AES-GCM 加密后才上传，密钥只在链接 # 后面（不会发给服务器）。服务端只见密文。</p>
+
+<div id="compose">
+  <textarea id="text" placeholder="输入要分享的内容…"></textarea>
+  <div class="row">
+    <label>过期：<select id="ttl">
+      <option value="3600">1 小时</option>
+      <option value="86400" selected>24 小时</option>
+      <option value="604800">7 天</option>
+    </select></label>
+    <label><input type="checkbox" id="burn" style="width:auto"> 阅后即焚</label>
+    <input id="password" placeholder="访问口令（可选）" autocomplete="new-password" style="max-width:200px">
+    <button id="create">生成分享链接</button>
+  </div>
+  <div id="share" hidden></div>
+</div>
+
+<div id="view" hidden>
+  <p id="status"></p>
+  <!-- 模式一：链接带 #密钥 → 自动解密；模式二：无密钥 → 手动输入 -->
+  <div id="keybox" hidden>
+    <p class="hint">链接中不含密钥，请粘贴密钥（创建时 # 后面那段）：</p>
+    <input id="keyinput" placeholder="例如 a2V5.aml2…" autocomplete="off">
+    <input id="pwinput" placeholder="访问口令（如有）" autocomplete="off" style="max-width:240px">
+    <button id="unlock">解密查看</button>
+  </div>
+  <textarea id="content" readonly hidden></textarea>
+  <button id="copy" class="secondary" hidden>复制到剪切板</button>
+</div>
+
+<script src="/vendor/qrcode.min.js"></script>
+<script>
+// ---------- 加密工具（Web Crypto，仅浏览器端） ----------
+const enc = new TextEncoder(), dec = new TextDecoder();
+const b64 = buf => {
+  // 分块转换，避免大 buffer 时 String.fromCharCode(...buf) 栈溢出
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
+};
+const unb64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+// 环境检测：crypto.subtle 仅在 HTTPS 或 localhost 可用
+if (!window.crypto || !crypto.subtle) {
+  document.body.innerHTML = '<h1>⚠️ 需要 HTTPS</h1>' +
+    '<p>浏览器加密功能（Web Crypto）仅在 HTTPS 或 localhost 下可用。' +
+    '当前通过非安全连接访问，请使用 HTTPS 地址，或仅在 localhost 测试。</p>';
+  throw new Error('Web Crypto unavailable (insecure context)');
+}
+
+async function encrypt(text) {
+  const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt']);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(text));
+  const raw = await crypto.subtle.exportKey('raw', key);
+  // key.b64.iv 三段拼进 URL fragment
+  return b64(raw) + '.' + b64(iv) + '.' + b64(ct);
+}
+
+async function decrypt(payload) {
+  const [kb, ivb, ctb] = payload.split('.');
+  const key = await crypto.subtle.importKey('raw', unb64(kb), 'AES-GCM', false, ['decrypt']);
+  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(ivb) }, key, unb64(ctb));
+  return dec.decode(pt);
+}
+
+const ID = location.pathname.slice(1); // 6 位短 ID
+
+// ---------- 创建 ----------
+document.getElementById('create').onclick = async () => {
+  const text = document.getElementById('text').value;
+  if (!text) return alert('内容为空');
+  const payload = await encrypt(text);
+  const r = await fetch('/api/clips', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ciphertext: payload,
+      burn: document.getElementById('burn').checked,
+      ttl: parseInt(document.getElementById('ttl').value, 10)
+    })
+  });
+  const data = await r.json();
+  if (!r.ok) return alert('创建失败：' + (data.error || r.status));
+  const keyPart = payload.split('.').slice(0, 2).join('.');
+  const link = location.origin + '/' + data.id + '#' + keyPart;
+  const box = document.getElementById('share');
+  const protectedNote = data.protected ? '<br><span class="hint">🔑 已启用访问口令：读取时需输入口令。</span>' : '';
+  box.hidden = false;
+  box.innerHTML = '✅ 完整链接（含密钥）：<br><a id="lnk"></a><br><br>' +
+    '🔒 无密钥链接（密钥需单独发送）：<br>' + location.origin + '/' + data.id +
+    '<br><span class="hint">密钥：<b>' + keyPart + '</b>（建议与链接分开两条消息发送）</span>' +
+    protectedNote + '<div id="qr"></div>';
+  box.querySelector('a').href = link;
+  box.querySelector('a').textContent = link;
+  // 二维码（qrcode-generator 库本地渲染，无外联）
+  try {
+    const qr = qrcode(0, 'M'); // 0 = 自动选择类型
+    qr.addData(link);
+    qr.make();
+    document.getElementById('qr').innerHTML = qr.createSvgTag({ cellSize: 3 });
+  } catch (e) { /* 二维码失败不影响主流程 */ }
+  await navigator.clipboard.writeText(link).catch(() => {});
+};
+
+// ---------- 查看 ----------
+async function fetchAndDecrypt(keyPart) {
+  const status = document.getElementById('status');
+  try {
+    const pw = document.getElementById('pwinput').value;
+    const r = await fetch('/api/clips/' + encodeURIComponent(ID) + '/read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pw: pw })  // 口令走 body，不进 URL/日志
+    });
+    const data = await r.json();
+    if (r.status === 401) throw new Error('口令错误（该内容设有访问口令）');
+    if (r.status === 404) throw new Error('不存在、已过期或已被读过（阅后即焚）');
+    if (!r.ok) throw new Error(r.status);
+    const ct = data.ciphertext.split('.').slice(2).join('.'); // 密文段
+    const text = await decrypt(keyPart + '.' + ct);
+    status.textContent = data.burn ? '🔥 阅后即焚：此内容已销毁，刷新将无法再读。' : '内容如下：';
+    const ta = document.getElementById('content');
+    ta.hidden = false; ta.value = text;
+    const btn = document.getElementById('copy');
+    btn.hidden = false;
+    btn.onclick = () => navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = '已复制 ✓';
+      setTimeout(() => { btn.textContent = '复制到剪切板'; }, 1500);
+    });
+    // 清掉地址栏中的密钥
+    if (location.hash) history.replaceState(null, '', location.pathname);
+    return true;
+  } catch (e) {
+    status.textContent = '❌ 无法解密或内容不可用：' + e.message;
+    status.className = 'err';
+    return false;
+  }
+}
+
+if (ID.length === 6) {
+  // 查看模式
+  document.getElementById('compose').hidden = true;
+  const view = document.getElementById('view'), status = document.getElementById('status');
+  view.hidden = false;
+  if (location.hash) {
+    // 模式一：URL 自带密钥，自动解密
+    fetchAndDecrypt(location.hash.slice(1));
+  } else {
+    // 模式二：手动输入密钥
+    status.textContent = '此链接未包含密钥。';
+    document.getElementById('keybox').hidden = false;
+    document.getElementById('unlock').onclick = () => {
+      const keyPart = document.getElementById('keyinput').value.trim();
+      if (!keyPart) return;
+      fetchAndDecrypt(keyPart);
+    };
+    document.getElementById('keyinput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('unlock').click();
+    });
+  }
+}
+// 否则：创建模式（首页），什么都不做
+ </script>
+</body>
+</html>
