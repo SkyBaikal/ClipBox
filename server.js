@@ -28,6 +28,34 @@ function log(level, event, fields = {}) {
   const line = JSON.stringify({ ts: new Date().toISOString(), level, event, ...fields });
   (level === 'error' ? console.error : console.log)(line);
 }
+
+// ---------- 告警（webhook：兼容 Slack/钉钉/飞书/自建接收端，未配置则静默跳过） ----------
+// ALERT_WEBHOOK_URL 配置后，error 级事件与关键告警会 POST JSON 过去（fire-and-forget，不阻塞主流程）
+const ALERT_WEBHOOK_URL = process.env.ALERT_WEBHOOK_URL || '';
+const alertCooldown = new Map(); // 同类告警 10 分钟内只发一次，防风暴
+function alert(event, fields = {}) {
+  log('error', event, fields);
+  if (!ALERT_WEBHOOK_URL) return Promise.resolve();
+  const key = event + JSON.stringify(fields).slice(0, 50);
+  const last = alertCooldown.get(key) || 0;
+  if (Date.now() - last < 10 * 60 * 1000) return Promise.resolve();
+  alertCooldown.set(key, Date.now());
+  const payload = JSON.stringify({
+    text: `[ClipBox] ${event} ${JSON.stringify(fields)} @ ${new Date().toISOString()}`
+  });
+  try {
+    // 用 http/https 原生模块，不引新依赖；3 秒超时，失败仅记日志。
+    // 返回 Promise：致命场景（启动自检失败）可 await 发完再退出。
+    const mod = ALERT_WEBHOOK_URL.startsWith('https') ? require('https') : require('http');
+    return new Promise(resolve => {
+      const req = mod.request(ALERT_WEBHOOK_URL, { method: 'POST', timeout: 3000,
+        headers: { 'Content-Type': 'application/json' } }, () => {});
+      req.on('error', () => { log('warn', 'alert_send_failed', {}); resolve(); });
+      req.on('timeout', () => { req.destroy(); });
+      req.end(payload, () => resolve());
+    });
+  } catch { return Promise.resolve(); /* 告警通道故障绝不影响主服务 */ }
+}
 const MAX_BODY = 64 * 1024;            // 密文上限 64KB
 const MAX_TTL_SECONDS = 7 * 24 * 3600; // 最长保留 7 天
 const MAX_CLIPS_PER_IP = 20;           // 每 IP 存量上限
@@ -41,8 +69,24 @@ const BACKUP_DIR = process.env.BACKUP_DIR || path.join(__dirname, 'backups');
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'clipbox.db');
 // DB_PATH 父目录不存在时自动创建（避免容器/新环境启动即崩）
 require('fs').mkdirSync(path.dirname(DB_PATH), { recursive: true });
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
+
+// ---------- 启动自检（第一批）：DB 打开/合法性/可写性 ----------
+// 必须在一切 DB 操作之前——损坏的库在 new Database 后第一条 PRAGMA 就会抛异常
+try {
+  var db = new Database(DB_PATH);
+  db.pragma('journal_mode = WAL');
+  db.pragma('quick_check', { simple: true }); // 损坏库此处抛 SqliteError
+  db.exec('CREATE TEMP TABLE IF NOT EXISTS _selfcheck(x INTEGER); DROP TABLE IF EXISTS _selfcheck;');
+  log('info', 'startup_db_open_ok', { db_path: DB_PATH });
+} catch (e) {
+  alert('startup_selfcheck_failed', { message: e.message, db_path: DB_PATH })
+    .finally(() => {
+      console.error('[fatal] 启动自检失败：数据库不可用，退出以交给进程管理器重启策略');
+      process.exit(1);
+    });
+  return; // 关键：阻断后续 DB 操作，等待告警发完由 finally 退出
+}
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS clips (
     id TEXT PRIMARY KEY,
@@ -69,6 +113,44 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_clips_expires ON clips (expires_at);
   CREATE INDEX IF NOT EXISTS idx_clips_ip ON clips (ip);
 `);
+
+// ---------- 启动自检（第二批）：深层完整性（迁移之后） ----------
+(function startupSelfCheck2() {
+  try {
+    const integrity = db.pragma('quick_check', { simple: true });
+    if (integrity !== 'ok') throw new Error(`sqlite quick_check: ${integrity}`);
+    log('info', 'startup_selfcheck_ok', { db_path: DB_PATH });
+  } catch (e) {
+    alert('startup_selfcheck_failed', { message: e.message, db_path: DB_PATH })
+      .finally(() => {
+        console.error('[fatal] 启动自检失败：数据库不可用，退出以交给进程管理器重启策略');
+        process.exit(1);
+      });
+    return;
+  }
+})();
+
+// ---------- 磁盘水位监控（每 5 分钟检查；低于阈值拒绝写入并告警，防 SQLite 写满盘报错） ----------
+const DISK_MIN_FREE_MB = parseInt(process.env.DISK_MIN_FREE_MB || '100', 10);
+let diskLowNotified = false;
+function diskFreeMB() {
+  try {
+    const stat = fs.statfsSync(path.dirname(DB_PATH));
+    return Math.round((stat.bavail * stat.bsize) / (1024 * 1024));
+  } catch { return -1; } // 平台不支持时跳过检查
+}
+setInterval(() => {
+  const free = diskFreeMB();
+  if (free < 0) return;
+  metrics.disk_free_mb = free;
+  if (free < DISK_MIN_FREE_MB && !diskLowNotified) {
+    diskLowNotified = true;
+    alert('disk_low', { free_mb: free, threshold_mb: DISK_MIN_FREE_MB });
+  } else if (free >= DISK_MIN_FREE_MB && diskLowNotified) {
+    diskLowNotified = false; // 恢复后重置，允许下次低水位再告警
+    log('info', 'disk_recovered', { free_mb: free });
+  }
+}, 5 * 60 * 1000).unref();
 
 app.use(express.json({ limit: MAX_BODY }));
 
@@ -105,7 +187,7 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ---------- 请求日志 + 指标（只记 ID/状态/耗时，绝不记密文或口令） ----------
-const metrics = { requests: 0, errors_4xx: 0, errors_5xx: 0, creates: 0, reads: 0 };
+const metrics = { requests: 0, errors_4xx: 0, errors_5xx: 0, creates: 0, reads: 0, disk_free_mb: -1 };
 app.use((req, res, next) => {
   const t0 = Date.now();
   res.on('finish', () => {
@@ -182,6 +264,12 @@ app.post('/api/clips', writeLimiter, (req, res) => {
   let ttlSeconds = parseInt(ttl, 10);
   if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) ttlSeconds = 24 * 3600;
   ttlSeconds = Math.min(ttlSeconds, MAX_TTL_SECONDS);
+
+  // 磁盘水位保护：低于阈值拒绝新写入（已有内容读取不受影响）
+  const freeMB = diskFreeMB();
+  if (freeMB >= 0 && freeMB < DISK_MIN_FREE_MB) {
+    return res.status(503).json({ error: 'service degraded: disk low, write temporarily disabled' });
+  }
 
   // 存储配额：每 IP 未过期存量上限
   const ip = clientIp(req);
