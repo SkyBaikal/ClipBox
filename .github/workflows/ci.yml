@@ -59,12 +59,15 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
+      - uses: docker/setup-qemu-action@v3
+
       - name: 构建 Docker 镜像（验证 Dockerfile 可构建）
         uses: docker/build-push-action@v6
         with:
           context: .
           push: false          # 仅验证构建，不推送（需要推送时配置 secrets）
           tags: clipbox:ci
+          platforms: linux/amd64,linux/arm64   # 双架构验证（arm64 走 QEMU）
           build-args: |
             GIT_SHA=${{ github.sha }}
 

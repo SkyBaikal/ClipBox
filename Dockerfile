@@ -1,9 +1,12 @@
 # ClipBox — 多阶段构建
-# 构建阶段：安装生产依赖（better-sqlite3 需要编译，用完整 python 工具链）
+# 构建阶段：安装生产依赖（better-sqlite3 无预编译的平台如 linux-arm64 glibc 需要源码编译，
+# 因此带上完整工具链；x64/arm64 musl、x64 glibc 会直接命中预编译，工具链不增加最终镜像体积）
 FROM node:22-bookworm-slim AS deps
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev
+RUN npm ci --omit=dev
 
 # 运行阶段：瘦身镜像
 FROM node:22-bookworm-slim
