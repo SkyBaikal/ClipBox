@@ -17,6 +17,30 @@
 - ✅ 管理接口（需 `ADMIN_TOKEN` 环境变量；stats / list / 删除单条 / 清空，绝不返回密文）
 - ✅ 体积上限 64KB
 
+## 运维与可观测性（v1.1）
+
+| 端点 | 说明 |
+|---|---|
+| `GET /healthz` | 存活 + 存量（反代/监控探针用）|
+| `GET /versionz` | 版本 + git SHA + 启动时间（部署核对）|
+| `GET /metricsz` | 请求数、4xx/5xx、创建/读取数、活跃条数、DB 大小 |
+
+日志为 **JSON lines** 结构化格式（`ts/level/event/...`），可直接接 log drains 或采集器；请求日志只记 path/status/耗时/IP，**绝不记录密文与口令**。
+
+- 挂起请求 30 秒超时（防慢速攻击）
+- SIGTERM/SIGINT 优雅关闭：停收请求 → WAL checkpoint → 干净关库（Docker stop / systemd restart 均安全）
+- 定时热备到 `backups/`（`BACKUP_INTERVAL_MIN` 分钟，默认 30，0 关闭；保留 7 份）
+- 裸机部署用 systemd 单元：`deploy/clipbox.service`（含崩溃自动重启与进程加固）
+
+## 冒烟测试
+
+```bash
+npm run smoke                                  # 默认 http://localhost:3000
+SMOKE_URL=http://localhost:3902 SMOKE_TOKEN=xxx npm run smoke
+```
+
+覆盖：健康检查、创建、路径直达、读取、口令、焚毁、畸形 JSON、CSP、版本端点、管理接口鉴权。
+
 ## 运行
 
 ```bash

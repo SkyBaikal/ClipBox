@@ -19,6 +19,15 @@ const Database = require('better-sqlite3');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const STARTED_AT = Date.now();
+const VERSION = require('./package.json').version || '0.0.0';
+const GIT_SHA = process.env.GIT_SHA || 'unknown';
+
+// ---------- 结构化日志（JSON lines，可被 log drains/采集器直接消费） ----------
+function log(level, event, fields = {}) {
+  const line = JSON.stringify({ ts: new Date().toISOString(), level, event, ...fields });
+  (level === 'error' ? console.error : console.log)(line);
+}
 const MAX_BODY = 64 * 1024;            // 密文上限 64KB
 const MAX_TTL_SECONDS = 7 * 24 * 3600; // 最长保留 7 天
 const MAX_CLIPS_PER_IP = 20;           // 每 IP 存量上限
@@ -94,6 +103,29 @@ app.use((req, res, next) => {
 });
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ---------- 请求日志 + 指标（只记 ID/状态/耗时，绝不记密文或口令） ----------
+const metrics = { requests: 0, errors_4xx: 0, errors_5xx: 0, creates: 0, reads: 0 };
+app.use((req, res, next) => {
+  const t0 = Date.now();
+  res.on('finish', () => {
+    metrics.requests++;
+    if (res.statusCode >= 500) metrics.errors_5xx++;
+    else if (res.statusCode >= 400) metrics.errors_4xx++;
+    if (req.method === 'POST' && req.path === '/api/clips') metrics.creates++;
+    if (req.method === 'POST' && req.path.endsWith('/read')) metrics.reads++;
+    if (req.path.startsWith('/api/')) {
+      log('info', 'http_request', {
+        method: req.method, path: req.path, status: res.statusCode,
+        ms: Date.now() - t0, ip: clientIp(req)
+      });
+    }
+  });
+  next();
+});
+
+// 请求超时：挂起的连接 30 秒断掉，防慢速攻击占资源
+app.use((req, res, next) => { req.setTimeout(30000); next(); });
 
 // 全局限流：每个 IP 每 15 分钟最多 100 次写 + 300 次读
 const writeLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100 });
@@ -207,6 +239,21 @@ app.get('/healthz', (req, res) => {
   res.json({ ok: true, clips: n, uptime_s: Math.round(process.uptime()) });
 });
 
+// 版本端点（部署核对用）
+app.get('/versionz', (req, res) => {
+  res.json({ version: VERSION, git_sha: GIT_SHA, started_at: new Date(STARTED_AT).toISOString() });
+});
+
+// 指标端点（供监控拉取；无敏感数据）
+app.get('/metricsz', (req, res) => {
+  res.json({
+    ...metrics,
+    active_clips: db.prepare('SELECT COUNT(*) AS n FROM clips WHERE expires_at > ?').get(Date.now()).n,
+    db_bytes: fs.existsSync(DB_PATH) ? fs.statSync(DB_PATH).size : 0,
+    uptime_s: Math.round(process.uptime())
+  });
+});
+
 // 管理接口鉴权（Bearer token）
 function requireAdmin(req, res, next) {
   if (!ADMIN_TOKEN) return res.status(403).json({ error: 'admin api disabled (set ADMIN_TOKEN)' });
@@ -247,7 +294,7 @@ app.delete('/api/admin/clips', requireAdmin, (req, res) => {
 // 每 5 分钟清理过期数据
 setInterval(() => {
   const n = db.prepare('DELETE FROM clips WHERE expires_at < ?').run(Date.now()).changes;
-  if (n) console.log(`[cleanup] removed ${n} expired clips`);
+  if (n) log('info', 'cleanup_expired', { removed: n });
 }, 5 * 60 * 1000).unref();
 
 // 路径直达：/:id（6 位 62 字符集）直接返回查看页；其余 404 到 API
@@ -256,8 +303,7 @@ app.get('/:id([A-Za-z0-9]{6})', (req, res) => {
 });
 
 const server = app.listen(PORT, () => {
-  console.log(`ClipBox listening on http://localhost:${PORT}`);
-  if (!ADMIN_TOKEN) console.log('[warn] ADMIN_TOKEN 未设置，管理接口已禁用');
+  log('info', 'server_started', { port: PORT, version: VERSION, admin_api: !!ADMIN_TOKEN });
 });
 
 // ---------- 稳定性：统一错误处理 + 优雅关闭 ----------
@@ -266,7 +312,7 @@ const server = app.listen(PORT, () => {
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   const isBodyParse = err.type === 'entity.parse.failed' || err.type === 'entity.too.large';
-  if (!isBodyParse) console.error('[error]', err.message);
+  if (!isBodyParse) log('error', 'unhandled_error', { message: err.message, path: req.path });
   if (res.headersSent) return;
   res.status(err.statusCode || (isBodyParse ? 400 : 500))
      .json({ error: isBodyParse ? 'bad request' : 'internal error' });
@@ -277,14 +323,14 @@ let shuttingDown = false;
 function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`[shutdown] ${signal} received, closing...`);
+  log('info', 'shutdown', { signal });
   server.close(() => {
     try {
       db.pragma('wal_checkpoint(TRUNCATE)');
       db.close();
-      console.log('[shutdown] db closed cleanly');
+      log('info', 'db_closed_cleanly', {});
     } catch (e) {
-      console.error('[shutdown] db close error:', e.message);
+      log('error', 'db_close_error', { message: e.message });
     }
     process.exit(0);
   });
@@ -299,8 +345,8 @@ fs.mkdirSync(BACKUP_DIR, { recursive: true });
 setInterval(() => {
   const target = path.join(BACKUP_DIR, `clipbox-${new Date().toISOString().slice(0, 10)}.db`);
   db.backup(target)
-    .then(() => console.log(`[backup] ok -> ${target}`))
-    .catch(e => console.error('[backup] failed:', e.message));
+    .then(() => log('info', 'backup_ok', { target }))
+    .catch(e => log('error', 'backup_failed', { message: e.message }));
   // 只保留最近 7 个备份
   const files = fs.readdirSync(BACKUP_DIR).filter(f => f.startsWith('clipbox-') && f.endsWith('.db')).sort();
   while (files.length > 7) {

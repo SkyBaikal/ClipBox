@@ -12,6 +12,8 @@ services:
       - ADMIN_TOKEN=${ADMIN_TOKEN:?请在 .env 中设置 ADMIN_TOKEN}
       # 经过 caddy 反代，信任 X-Forwarded-For 以获得真实客户端 IP（限流/配额依赖）
       - TRUST_PROXY=1
+      # 构建时注入 git SHA（可选，用于 /versionz）
+      - GIT_SHA=${GIT_SHA:-unknown}
     volumes:
       - clipbox-data:/app/data   # SQLite 数据持久化
 

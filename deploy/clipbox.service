@@ -1,0 +1,29 @@
+[Unit]
+Description=ClipBox zero-knowledge clipboard
+After=network.target
+
+[Service]
+Type=simple
+# 部署前修改：运行用户、路径与环境变量
+User=clipbox
+Group=clipbox
+WorkingDirectory=/opt/clipbox
+ExecStart=/usr/bin/node server.js
+Environment=PORT=3000
+Environment=ADMIN_TOKEN=CHANGE_ME_openssl_rand_hex_32
+Environment=TRUST_PROXY=0
+# 崩溃自动重启，10 秒内最多 5 次
+Restart=always
+RestartSec=2
+StartLimitBurst=5
+StartLimitIntervalSec=10
+# 加固
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/clipbox
+PrivateTmp=true
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target
