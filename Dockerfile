@@ -7,7 +7,9 @@ RUN npm install --omit=dev
 
 # 运行阶段：瘦身镜像
 FROM node:22-bookworm-slim
+ARG GIT_SHA=unknown
 ENV NODE_ENV=production
+ENV GIT_SHA=${GIT_SHA}
 WORKDIR /app
 
 # 非 root 用户

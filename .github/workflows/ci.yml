@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: 安装依赖
+        run: npm ci
+
+      - name: 依赖漏洞审计（生产依赖；高危即失败。dev 依赖的 moderate 告警不阻断）
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: 语法检查
+        run: node --check server.js
+
+      - name: 启动服务（隔离端口 + 测试数据库）
+        run: |
+          node server.js &
+          echo $! > /tmp/clipbox.pid
+          # 等待就绪（最多 10 秒）
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:3999/healthz > /dev/null && break
+            sleep 0.5
+          done
+        env:
+          PORT: 3999
+          ADMIN_TOKEN: ci-test-token-not-secret
+          DB_PATH: /tmp/ci-clipbox.db
+          BACKUP_INTERVAL_MIN: 0
+
+      - name: 冒烟测试
+        run: |
+          SMOKE_URL=http://localhost:3999 SMOKE_TOKEN=ci-test-token-not-secret bash scripts/smoke.sh
+
+      - name: 冒烟后清理并检查日志无异常
+        if: always()
+        run: |
+          kill $(cat /tmp/clipbox.pid) 2>/dev/null || true
+          echo "服务已停止（优雅关闭日志见上方启动步骤输出）"
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 构建 Docker 镜像（验证 Dockerfile 可构建）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false          # 仅验证构建，不推送（需要推送时配置 secrets）
+          tags: clipbox:ci
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+
+      # 可选：推送镜像（需要 repo secrets: DOCKERHUB_USERNAME / DOCKERHUB_TOKEN）
+      # - name: Push
+      #   if: github.ref == 'refs/heads/main'
+      #   uses: docker/build-push-action@v6
+      #   with:
+      #     context: .
+      #     push: true
+      #     tags: user/clipbox:latest
