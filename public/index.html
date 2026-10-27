@@ -5,53 +5,120 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ClipBox</title>
 <style>
-  :root { color-scheme: light dark; }
+  /* ---------- 主题变量：亮/暗双主题，跟随系统 + 手动切换 ---------- */
+  :root {
+    color-scheme: light;
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --text: #1a1d21;
+    --text-dim: #6b7280;
+    --border: #d5d9e0;
+    --accent: #2563eb;
+    --accent-hover: #1d4ed8;
+    --danger: #dc2626;
+    --code-bg: #eef1f5;
+  }
+  html.dark {
+    color-scheme: dark;
+    --bg: #111418;
+    --card: #1b2027;
+    --text: #e6e9ee;
+    --text-dim: #9aa3b0;
+    --border: #343b46;
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --danger: #f87171;
+    --code-bg: #232a33;
+  }
   * { box-sizing: border-box; }
-  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
-  h1 { font-size: 1.4rem; }
-  textarea, input { width: 100%; padding: .6rem; margin: .3rem 0; border: 1px solid #8886; border-radius: 8px; font: inherit; }
-  textarea { min-height: 140px; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    max-width: 640px; margin: 2rem auto; padding: 0 1rem;
+    background: var(--bg); color: var(--text);
+    line-height: 1.55;
+    transition: background .2s, color .2s;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.2rem;
+    margin: 1rem 0;
+  }
+  h1 { font-size: 1.35rem; margin: .4rem 0; }
+  textarea, input, select {
+    width: 100%; padding: .6rem .7rem; margin: .3rem 0;
+    border: 1px solid var(--border); border-radius: 8px;
+    font: inherit; color: var(--text); background: var(--bg);
+  }
+  textarea:focus, input:focus, select:focus {
+    outline: 2px solid var(--accent); outline-offset: -1px;
+  }
+  textarea { min-height: 140px; resize: vertical; }
   .row { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; margin: .6rem 0; }
+  .row label { display: flex; align-items: center; gap: .4rem; white-space: nowrap; }
+  /* checkbox 不再被压缩截断 */
+  .row label.chk { flex: 0 0 auto; cursor: pointer; }
+  .row label.chk input { width: 1.05rem; height: 1.05rem; margin: 0; accent-color: var(--accent); cursor: pointer; }
+  #ttl { width: auto; }
+  button {
+    padding: .55rem 1.2rem; border: 0; border-radius: 8px;
+    background: var(--accent); color: #fff; font: inherit;
+    cursor: pointer; transition: background .15s;
+  }
+  button:hover { background: var(--accent-hover); }
+  button.secondary { background: var(--code-bg); color: var(--text); border: 1px solid var(--border); }
+  button.secondary:hover { border-color: var(--accent); }
+  button.icon {
+    background: none; border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: .25rem .6rem; font-size: .85rem;
+  }
+  button.icon:hover { border-color: var(--accent); color: var(--accent); background: none; }
+  #share { font-family: ui-monospace, monospace; word-break: break-all; background: var(--code-bg); border: 1px solid var(--border); padding: .8rem; border-radius: 8px; font-size: .9rem; }
+  #share a { color: var(--accent); }
+  .hint { color: var(--text-dim); font-size: .85rem; }
+  .err { color: var(--danger); }
+  /* 固定角标：语言 + 主题切换 */
+  #lang { position: fixed; top: .6rem; right: 3.2rem; }
+  #theme { position: fixed; top: .6rem; right: .8rem; font-size: 1rem; line-height: 1; padding: .3rem .5rem; }
   /* 移动端：控件换行铺满，按钮易点 */
   @media (max-width: 480px) {
     body { margin: 1rem auto; }
     .row { gap: .5rem; }
-    .row label, .row input, .row button, .row select { flex: 1 1 45%; }
+    .row label, .row select { flex: 1 1 45%; }
+    .row label.chk { flex: 1 1 100%; }
     .row button { flex: 1 1 100%; padding: .8rem; }
     input#password { max-width: 100% !important; }
     input#pwinput { max-width: 100% !important; }
   }
-  button { padding: .55rem 1.2rem; border: 0; border-radius: 8px; background: #2563eb; color: #fff; font: inherit; cursor: pointer; }
-  button.secondary { background: #666; }
-  #share { font-family: monospace; word-break: break-all; background: #8881; padding: .6rem; border-radius: 8px; }
-  .hint { color: #888; font-size: .85rem; }
-  .err { color: #dc2626; }
-  #lang { position: fixed; top: .6rem; right: .8rem; background: none; border: 1px solid #8886; color: inherit; border-radius: 6px; padding: .25rem .6rem; font-size: .85rem; }
 </style>
 </head>
 <body>
-<button id="lang" title="切换语言 / Switch language">EN</button>
+<button id="lang" class="icon" title="切换语言 / Switch language">EN</button>
+<button id="theme" class="icon" title="切换主题 / Toggle theme">🌙</button>
 <h1>📎 ClipBox · <span data-i18n="title">零知识在线剪切板</span></h1>
 <p class="hint" data-i18n="tagline">文本在浏览器内用 AES-GCM 加密后才上传，密钥只在链接 # 后面（不会发给服务器）。服务端只见密文。</p>
 
 <div id="compose">
-  <textarea id="text" data-i18n-ph="inputPlaceholder"></textarea>
-  <div class="row">
-    <label><span data-i18n="expires">过期：</span><select id="ttl">
-      <option value="3600" data-i18n="ttl1h">1 小时</option>
-      <option value="86400" selected data-i18n="ttl24h">24 小时</option>
-      <option value="604800" data-i18n="ttl7d">7 天</option>
-    </select></label>
-    <label><input type="checkbox" id="burn" style="width:auto"> <span data-i18n="burn">阅后即焚</span></label>
-    <input id="password" data-i18n-ph="passwordPh" autocomplete="new-password" style="max-width:200px">
-    <button id="create" data-i18n="createBtn">生成分享链接</button>
+  <div class="card">
+    <textarea id="text" data-i18n-ph="inputPlaceholder"></textarea>
+    <div class="row">
+      <label><span data-i18n="expires">过期：</span><select id="ttl">
+        <option value="3600" data-i18n="ttl1h">1 小时</option>
+        <option value="86400" selected data-i18n="ttl24h">24 小时</option>
+        <option value="604800" data-i18n="ttl7d">7 天</option>
+      </select></label>
+      <label class="chk"><input type="checkbox" id="burn"> <span data-i18n="burn">阅后即焚</span></label>
+      <input id="password" data-i18n-ph="passwordPh" autocomplete="new-password" style="max-width:200px">
+      <button id="create" data-i18n="createBtn">生成分享链接</button>
+    </div>
   </div>
-  <div id="share" hidden></div>
+  <div id="share" class="card" hidden></div>
 </div>
 
 <div id="view" hidden>
   <p id="status"></p>
-  <div id="keybox" hidden>
+  <div id="keybox" class="card" hidden>
     <p class="hint" data-i18n="keyPrompt">链接中不含密钥，请粘贴密钥（创建时 # 后面那段）：</p>
     <input id="keyinput" data-i18n-ph="keyPh" autocomplete="off">
     <input id="pwinput" data-i18n-ph="pwPh" autocomplete="off" style="max-width:240px">
@@ -63,6 +130,25 @@
 
 <script src="/vendor/qrcode.min.js"></script>
 <script>
+// ---------- 主题（暗色模式：跟随系统 + 手动切换 + localStorage 记忆） ----------
+const themeBtn = document.getElementById('theme');
+function applyTheme(mode) {
+  document.documentElement.classList.toggle('dark', mode === 'dark');
+  themeBtn.textContent = mode === 'dark' ? '☀️' : '🌙';
+}
+let theme = localStorage.getItem('clipbox_theme') ||
+  (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+applyTheme(theme);
+themeBtn.onclick = () => {
+  theme = theme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('clipbox_theme', theme);
+  applyTheme(theme);
+};
+// 系统主题变化时自动跟随（仅当用户未手动选择过）
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
+  if (!localStorage.getItem('clipbox_theme')) applyTheme(e.matches ? 'dark' : 'light');
+});
+
 // ---------- i18n（中英双语；localStorage 记忆，默认跟随浏览器语言） ----------
 const I18N = {
   zh: {
@@ -193,10 +279,10 @@ document.getElementById('create').onclick = async () => {
   box.innerHTML = t('fullLink') + '<br><a id="lnk"></a><br><br>' +
     t('bareLink') + '<br>' + location.origin + '/' + data.id +
     '<br><span class="hint">' + t('keyNote') + '<b>' + keyPart + '</b>' + t('keyNoteHint') + '</span>' +
-    protectedNote + '<div id="qr"></div>';
+    protectedNote + '<div id="qr" style="margin-top:.8rem;background:#fff;padding:.5rem;border-radius:8px;display:inline-block"></div>';
   box.querySelector('a').href = link;
   box.querySelector('a').textContent = link;
-  // 二维码（qrcode-generator 库本地渲染，无外联）
+  // 二维码（qrcode-generator 库本地渲染，无外联；白底保证扫码对比度，暗色主题下也不受影响）
   try {
     const qr = qrcode(0, 'M'); // 0 = 自动选择类型
     qr.addData(link);
