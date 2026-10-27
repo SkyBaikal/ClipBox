@@ -107,6 +107,7 @@ function addColumnIfMissing(table, col, ddl) {
 addColumnIfMissing('clips', 'ip', `ip TEXT NOT NULL DEFAULT ''`);
 addColumnIfMissing('clips', 'pw_salt', 'pw_salt TEXT');
 addColumnIfMissing('clips', 'pw_hash', 'pw_hash TEXT');
+addColumnIfMissing('clips', 'del_token_hash', 'del_token_hash TEXT');
 
 // 索引必须在列迁移之后建（旧库的 ip 列由迁移补出）
 db.exec(`
@@ -234,11 +235,11 @@ function newId() {
 // 短 ID 撞车时重试（唯一约束冲突则换一个再插）
 function insertClip(row) {
   const stmt = db.prepare(
-    'INSERT INTO clips (id, ciphertext, burn, expires_at, ip, pw_salt, pw_hash) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO clips (id, ciphertext, burn, expires_at, ip, pw_salt, pw_hash, del_token_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   );
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      stmt.run(newId(), row.ciphertext, row.burn, row.expires_at, row.ip, row.pw_salt, row.pw_hash);
+      stmt.run(newId(), row.ciphertext, row.burn, row.expires_at, row.ip, row.pw_salt, row.pw_hash, row.del_token_hash);
       return true;
     } catch (e) {
       if (!String(e.message).includes('UNIQUE')) throw e;
@@ -291,10 +292,30 @@ app.post('/api/clips', writeLimiter, (req, res) => {
   }
 
   const expiresAt = Date.now() + ttlSeconds * 1000;
-  const ok = insertClip({ ciphertext, burn: burn ? 1 : 0, expires_at: expiresAt, ip, pw_salt, pw_hash });
+  // 创建者自删令牌：明文只在创建响应里出现一次，服务端只存 SHA-256 哈希
+  const delToken = crypto.randomBytes(24).toString('hex');
+  const delTokenHash = crypto.createHash('sha256').update(delToken).digest('hex');
+  const ok = insertClip({ ciphertext, burn: burn ? 1 : 0, expires_at: expiresAt, ip, pw_salt, pw_hash, del_token_hash: delTokenHash });
   if (!ok) return res.status(500).json({ error: 'id collision' });
   const id = db.prepare('SELECT id FROM clips WHERE rowid = last_insert_rowid()').get().id;
-  res.json({ id, expires_at: expiresAt, protected: !!pw_hash });
+  res.json({ id, expires_at: expiresAt, protected: !!pw_hash, delete_token: delToken });
+});
+
+// 创建者自删：凭删除令牌（body 传递，不进 URL/日志）；令牌哈希比对，误删有口令的内容仍需先过口令吗——不需要，删除不暴露密文
+app.delete('/api/clips/:id', writeLimiter, (req, res) => {
+  const token = String((req.body || {}).delete_token || '');
+  if (!/^[0-9a-f]{48}$/.test(token)) return res.status(400).json({ error: 'delete_token required' });
+  const row = db.prepare('SELECT id, del_token_hash FROM clips WHERE id = ?').get(req.params.id);
+  if (!row || !row.del_token_hash) return res.status(404).json({ error: 'not found' });
+  const calc = crypto.createHash('sha256').update(token).digest('hex');
+  // 两侧都是 hex 字符串 → 按 utf8 编码比较（与口令校验一致）；digest('hex') 的 Buffer 是原始 32 字节，与 utf8 不匹配会永远失败
+  const a = Buffer.from(calc), b = Buffer.from(row.del_token_hash);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(403).json({ error: 'wrong delete token' });
+  }
+  db.prepare('DELETE FROM clips WHERE id = ?').run(row.id);
+  log('info', 'clip_deleted_by_owner', { id: row.id });
+  res.json({ deleted: true });
 });
 
 // 读取（阅后即焚：读后即删，事务保证原子性；带口令需验证）

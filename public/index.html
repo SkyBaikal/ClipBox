@@ -69,6 +69,8 @@
   button:hover { background: var(--accent-hover); }
   button.secondary { background: var(--code-bg); color: var(--text); border: 1px solid var(--border); }
   button.secondary:hover { border-color: var(--accent); }
+  button.danger, html.dark button.danger { background: var(--danger); color: #fff; border: 0; }
+  button.danger:hover { filter: brightness(.9); }
   button.icon {
     background: none; border: 1px solid var(--border); color: var(--text);
     border-radius: 6px; padding: .25rem .6rem; font-size: .85rem;
@@ -125,10 +127,36 @@
     <button id="unlock" data-i18n="unlockBtn">解密查看</button>
   </div>
   <textarea id="content" readonly hidden></textarea>
-  <button id="copy" class="secondary" hidden data-i18n="copyBtn">复制到剪切板</button>
+  <div id="rendered" class="md" hidden></div>
+  <div class="row">
+    <button id="copy" class="secondary" hidden data-i18n="copyBtn">复制到剪切板</button>
+    <button id="del" class="secondary danger" hidden data-i18n="delBtn">删除此内容</button>
+  </div>
+  <div id="delbox" class="card" hidden>
+    <p class="hint" data-i18n="delPrompt">输入删除令牌以删除此内容：</p>
+    <input id="delinput" autocomplete="off">
+    <button id="delconfirm" class="danger" data-i18n="delBtn">删除此内容</button>
+  </div>
 </div>
 
+<link rel="stylesheet" href="/vendor/highlight-theme.css">
+<style>
+  /* Markdown 渲染区样式（跟随主题变量） */
+  .md { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1rem 1.2rem; margin: 1rem 0; overflow-wrap: break-word; }
+  .md pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: .8rem; overflow-x: auto; font-size: .85rem; }
+  .md code { font-family: ui-monospace, monospace; font-size: .9em; }
+  .md p code { background: var(--code-bg); padding: .1rem .3rem; border-radius: 4px; }
+  .md h1, .md h2, .md h3 { margin: .8rem 0 .4rem; }
+  .md blockquote { border-left: 3px solid var(--accent); margin: .6rem 0; padding: .2rem .8rem; color: var(--text-dim); }
+  .md a { color: var(--accent); }
+  .md img { max-width: 100%; }
+  .md table { border-collapse: collapse; }
+  .md th, .md td { border: 1px solid var(--border); padding: .3rem .6rem; }
+</style>
+
 <script src="/vendor/qrcode.min.js"></script>
+<script src="/vendor/marked.min.js"></script>
+<script src="/vendor/highlight.min.js"></script>
 <script>
 // ---------- 主题（暗色模式：跟随系统 + 手动切换 + localStorage 记忆） ----------
 const themeBtn = document.getElementById('theme');
@@ -165,6 +193,9 @@ const I18N = {
     keyNote: '密钥：', keyNoteHint: '（建议与链接分开两条消息发送）',
     protectedNote: '🔑 已启用访问口令：读取时需输入口令。',
     noKey: '此链接未包含密钥。',
+    delTokenTitle: '🗑️ 删除令牌（请保存，凭此可删除此内容）：',
+    delTokenHint: '（令牌仅显示这一次，丢失后无法删除，内容将按期自动过期）',
+    delBtn: '删除此内容', delPrompt: '输入删除令牌以删除此内容：', delOk: '已删除 ✓', delFail: '删除失败：',
     burnRead: '🔥 阅后即焚：此内容已销毁，刷新将无法再读。', contentIs: '内容如下：',
     err401: '口令错误（该内容设有访问口令）',
     err404: '不存在、已过期或已被读过（阅后即焚）',
@@ -186,6 +217,9 @@ const I18N = {
     keyNote: 'Key: ', keyNoteHint: ' (recommended to send separately from the link)',
     protectedNote: '🔑 Password protected: a password is required to read.',
     noKey: 'This link does not contain a key.',
+    delTokenTitle: '🗑️ Delete token (save it — required to delete this paste): ',
+    delTokenHint: ' (shown only once; without it the paste can only expire naturally)',
+    delBtn: 'Delete this paste', delPrompt: 'Enter the delete token:', delOk: 'Deleted ✓', delFail: 'Delete failed: ',
     burnRead: '🔥 Burn-after-reading: content destroyed. Refreshing will not work.', contentIs: 'Content:',
     err401: 'Wrong password (this content is password protected)',
     err404: 'Not found, expired, or already read (burn after reading)',
@@ -279,9 +313,12 @@ document.getElementById('create').onclick = async () => {
   box.innerHTML = t('fullLink') + '<br><a id="lnk"></a><br><br>' +
     t('bareLink') + '<br>' + location.origin + '/' + data.id +
     '<br><span class="hint">' + t('keyNote') + '<b>' + keyPart + '</b>' + t('keyNoteHint') + '</span>' +
-    protectedNote + '<div id="qr" style="margin-top:.8rem;background:#fff;padding:.5rem;border-radius:8px;display:inline-block"></div>';
+    protectedNote + '<div id="qr" style="margin-top:.8rem;background:#fff;padding:.5rem;border-radius:8px;display:inline-block"></div>' +
+    '<br><span class="hint">' + t('delTokenTitle') + '<b>' + data.delete_token + '</b>' + t('delTokenHint') + '</span>';
   box.querySelector('a').href = link;
   box.querySelector('a').textContent = link;
+  // 删除令牌也存 sessionStorage：同会话内可直接一键删除（关标签即失效，不落盘）
+  try { sessionStorage.setItem('clipbox_del_' + data.id, data.delete_token); } catch (e) {}
   // 二维码（qrcode-generator 库本地渲染，无外联；白底保证扫码对比度，暗色主题下也不受影响）
   try {
     const qr = qrcode(0, 'M'); // 0 = 自动选择类型
@@ -293,6 +330,27 @@ document.getElementById('create').onclick = async () => {
 };
 
 // ---------- 查看 ----------
+async function deleteClip(token, statusEl, btn) {
+  if (!confirm(t('delPrompt'))) return;
+  try {
+    const r = await fetch('/api/clips/' + encodeURIComponent(ID), {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delete_token: token })
+    });
+    if (r.ok) {
+      btn.textContent = t('delOk');
+      btn.disabled = true;
+      try { sessionStorage.removeItem('clipbox_del_' + ID); } catch (e) {}
+      statusEl.textContent = t('delOk');
+    } else {
+      statusEl.textContent = t('delFail') + r.status;
+    }
+  } catch (e) {
+    statusEl.textContent = t('delFail') + e.message;
+  }
+}
+
 async function fetchAndDecrypt(keyPart) {
   const status = document.getElementById('status');
   try {
@@ -310,13 +368,47 @@ async function fetchAndDecrypt(keyPart) {
     const text = await decrypt(keyPart + '.' + ct);
     status.textContent = data.burn ? t('burnRead') : t('contentIs');
     const ta = document.getElementById('content');
-    ta.hidden = false; ta.value = text;
+    const md = document.getElementById('rendered');
+    // 展示策略：内容像 Markdown（含标题/代码块/列表标记）→ 渲染；否则纯文本展示
+    const looksMarkdown = /^#|\n\n|\n[-*] |\n\d\. |```|\||\*\*/.test(text) && text.length > 20;
+    if (looksMarkdown && window.marked) {
+      try {
+        marked.setOptions({ breaks: true, gfm: true });
+        md.innerHTML = marked.parse(text);
+        if (window.hljs) md.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+        ta.hidden = true; md.hidden = false;
+      } catch (e) { md.hidden = true; ta.hidden = false; }
+    } else {
+      md.hidden = true; ta.hidden = false;
+    }
+    ta.value = text;
     const btn = document.getElementById('copy');
     btn.hidden = false;
     btn.onclick = () => navigator.clipboard.writeText(text).then(() => {
       btn.textContent = t('copied');
       setTimeout(() => { btn.textContent = t('copyBtn'); }, 1500);
     });
+    // 创建者自删：同会话创建的（sessionStorage 有令牌）显示一键删除；否则可手动输入令牌
+    const delBtn = document.getElementById('del');
+    let token = null;
+    try { token = sessionStorage.getItem('clipbox_del_' + ID); } catch (e) {}
+    if (token) {
+      delBtn.hidden = false;
+      delBtn.onclick = () => deleteClip(token, status, delBtn);
+    } else {
+      // 非创建会话：提供令牌输入框（适用于换了浏览器但仍保存了令牌的用户）
+      const delbox = document.getElementById('delbox');
+      const delconfirm = document.getElementById('delconfirm');
+      delconfirm.onclick = () => {
+        const tok = document.getElementById('delinput').value.trim();
+        if (tok) deleteClip(tok, status, delconfirm);
+      };
+      document.getElementById('delinput').addEventListener('keydown', e => {
+        if (e.key === 'Enter') delconfirm.click();
+      });
+      // 只有当页面带 ?del=1 或用户从创建页跳来时才展示，避免打扰普通读者 —— 简化：始终不展示输入框，除非 URL 带 del 参数
+      if (new URLSearchParams(location.search).get('del') === '1') delbox.hidden = false;
+    }
     // 清掉地址栏中的密钥
     if (location.hash) history.replaceState(null, '', location.pathname);
     return true;
