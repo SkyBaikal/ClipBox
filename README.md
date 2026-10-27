@@ -13,6 +13,8 @@
 - ✅ 阅后即焚（读一次即删，事务原子操作）
 - ✅ 客户端端到端加密（零知识）
 - ✅ 可选访问口令（服务端只存 PBKDF2-SHA256 12 万轮派生哈希，校验用 timingSafeEqual 防时序侧信道；口令经 POST body 传输，不进 URL/日志）
+- ✅ 创建者自删：创建响应返回一次性删除令牌（服务端只存 SHA-256 哈希），凭令牌 `DELETE /api/clips/:id`
+- ✅ Markdown 渲染 + 代码高亮（查看端解密后渲染，marked + highlight.js 本地 vendor，服务端仍只见密文）
 - ✅ 二维码（qrcode-generator 本地渲染，无外联 CDN）
 - ✅ 路径直达查看页（`/:id` 不带密钥时手动输入密钥解密）
 - ✅ 非 HTTPS 环境检测（`crypto.subtle` 不可用时给出明确提示页）
