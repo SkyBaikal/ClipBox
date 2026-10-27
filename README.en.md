@@ -138,3 +138,4 @@ Frontend requires HTTPS or localhost (Web Crypto constraint).
 - Synchronous PBKDF2 caps password-protected create throughput (~15 req/s)
 - Backups are automatic but restore is manual
 - No centralized log/alert collection (formats are ready — plug in when needed)
+- Markdown rendering uses marked (no sanitizing by default). Acceptable under the current "you decrypt your own paste" threat model; add DOMPurify if multi-user/collaborative scenarios are ever introduced.
