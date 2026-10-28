@@ -111,6 +111,7 @@
         <option value="604800" data-i18n="ttl7d">7 天</option>
       </select></label>
       <label class="chk"><input type="checkbox" id="burn"> <span data-i18n="burn">阅后即焚</span></label>
+      <input id="maxreads" type="number" min="0" max="1000" style="max-width:120px" data-i18n-ph="maxReadsPh" title="Max read count">
       <input id="password" data-i18n-ph="passwordPh" autocomplete="new-password" style="max-width:200px">
       <button id="create" data-i18n="createBtn">生成分享链接</button>
     </div>
@@ -156,6 +157,7 @@
 
 <script src="/vendor/qrcode.min.js"></script>
 <script src="/vendor/marked.min.js"></script>
+<script src="/vendor/purify.min.js"></script>
 <script src="/vendor/highlight.min.js"></script>
 <script>
 // ---------- 主题（暗色模式：跟随系统 + 手动切换 + localStorage 记忆） ----------
@@ -185,6 +187,7 @@ const I18N = {
     inputPlaceholder: '输入要分享的内容…',
     expires: '过期：', ttl1h: '1 小时', ttl24h: '24 小时', ttl7d: '7 天',
     burn: '阅后即焚', passwordPh: '访问口令（可选）', createBtn: '生成分享链接',
+    maxReadsPh: '阅读次数上限',
     keyPrompt: '链接中不含密钥，请粘贴密钥（创建时 # 后面那段）：',
     keyPh: '例如 a2V5.aml2…', pwPh: '访问口令（如有）', unlockBtn: '解密查看',
     copyBtn: '复制到剪切板', copied: '已复制 ✓',
@@ -209,6 +212,7 @@ const I18N = {
     inputPlaceholder: 'Enter content to share…',
     expires: 'Expires: ', ttl1h: '1 hour', ttl24h: '24 hours', ttl7d: '7 days',
     burn: 'Burn after reading', passwordPh: 'Access password (optional)', createBtn: 'Create link',
+    maxReadsPh: 'Max reads (opt.)',
     keyPrompt: 'This link has no key. Paste the key (the part after # when it was created):',
     keyPh: 'e.g. a2V5.aml2…', pwPh: 'Access password (if set)', unlockBtn: 'Decrypt',
     copyBtn: 'Copy to clipboard', copied: 'Copied ✓',
@@ -300,7 +304,8 @@ document.getElementById('create').onclick = async () => {
     body: JSON.stringify({
       ciphertext: payload,
       burn: document.getElementById('burn').checked,
-      ttl: parseInt(document.getElementById('ttl').value, 10)
+      ttl: parseInt(document.getElementById('ttl').value, 10),
+      max_reads: parseInt(document.getElementById('maxreads').value, 10) || 0
     })
   });
   const data = await r.json();
@@ -374,8 +379,20 @@ async function fetchAndDecrypt(keyPart) {
     if (looksMarkdown && window.marked) {
       try {
         marked.setOptions({ breaks: true, gfm: true });
-        md.innerHTML = marked.parse(text);
-        if (window.hljs) md.querySelectorAll('pre code').forEach(el => hljs.highlightElement(el));
+        // DOMPurify 消毒：关掉 marked 默认直插 HTML 的 XSS 理论面
+        md.innerHTML = window.DOMPurify ? DOMPurify.sanitize(marked.parse(text)) : marked.parse(text);
+        if (window.hljs) {
+          md.querySelectorAll('pre code').forEach(el => {
+            // 无语言标注的代码块自动检测语言（highlight.js auto-detect）
+            if (!el.className.includes('language-') && !el.className.includes('hljs')) {
+              const r = hljs.highlightAuto(el.textContent);
+              el.className = 'hljs language-' + r.language;
+              el.innerHTML = r.value;
+            } else {
+              hljs.highlightElement(el);
+            }
+          });
+        }
         ta.hidden = true; md.hidden = false;
       } catch (e) { md.hidden = true; ta.hidden = false; }
     } else {

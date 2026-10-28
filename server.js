@@ -108,6 +108,9 @@ addColumnIfMissing('clips', 'ip', `ip TEXT NOT NULL DEFAULT ''`);
 addColumnIfMissing('clips', 'pw_salt', 'pw_salt TEXT');
 addColumnIfMissing('clips', 'pw_hash', 'pw_hash TEXT');
 addColumnIfMissing('clips', 'del_token_hash', 'del_token_hash TEXT');
+addColumnIfMissing('clips', 'max_reads', 'max_reads INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('clips', 'read_count', 'read_count INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('clips', 'pw_rounds', 'pw_rounds INTEGER NOT NULL DEFAULT 120000');
 
 // 索引必须在列迁移之后建（旧库的 ip 列由迁移补出）
 db.exec(`
@@ -155,16 +158,41 @@ setInterval(() => {
 
 app.use(express.json({ limit: MAX_BODY }));
 
-// ---------- 安全响应头（CSP 等） ----------
+// ---------- 安全响应头（CSP 等）----------
+// script 用 per-request nonce（消除 'unsafe-inline'）；style 保留 unsafe-inline（单文件前端的内联样式，风险低）
+const nonces = new WeakMap();
 app.use((req, res, next) => {
+  const nonce = crypto.randomBytes(16).toString('base64');
+  nonces.set(res, nonce);
   res.set({
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'no-referrer',
-    // 本站无内联第三方脚本；qrcode 本地托管；style/script 允许内联（单文件前端）
     'Content-Security-Policy':
-      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'"
+      `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'`
   });
+  next();
+});
+
+// 给 HTML 响应注入 nonce（其内联 <script> 才能通过 CSP）
+// 覆盖两条路径：express.static 的 index.html 和显式 sendFile 的 /:id 页面
+app.use((req, res, next) => {
+  const origSend = res.send.bind(res);
+  res.send = (body) => {
+    const nonce = nonces.get(res);
+    if (nonce && typeof body === 'string' && body.includes('<script>') && !body.includes('nonce=')) {
+      body = body.replace(/<script>/g, `<script nonce="${nonce}">`);
+    }
+    return origSend(body);
+  };
+  const origSendFile = res.sendFile.bind(res);
+  res.sendFile = (p, opts, cb) => {
+    const nonce = nonces.get(res);
+    if (!nonce || !String(p).endsWith('index.html')) return origSendFile(p, opts, cb);
+    const html = fs.readFileSync(p, 'utf8').replace(/<script>/g, `<script nonce="${nonce}">`);
+    res.set('Content-Type', 'text/html; charset=UTF-8');
+    res.send(html);
+  };
   next();
 });
 
@@ -185,7 +213,14 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  index: false,           // 首页由下方显式路由处理（需要注入 CSP nonce）
+  etag: true,
+  setHeaders: (res, p) => {
+    // HTML 由路由注入 nonce，这里不做缓存避免 nonce 复用
+    if (p.endsWith('.html')) res.set('Cache-Control', 'no-store');
+  }
+}));
 
 // ---------- 请求日志 + 指标（只记 ID/状态/耗时，绝不记密文或口令） ----------
 const metrics = { requests: 0, errors_4xx: 0, errors_5xx: 0, creates: 0, reads: 0, disk_free_mb: -1 };
@@ -235,11 +270,11 @@ function newId() {
 // 短 ID 撞车时重试（唯一约束冲突则换一个再插）
 function insertClip(row) {
   const stmt = db.prepare(
-    'INSERT INTO clips (id, ciphertext, burn, expires_at, ip, pw_salt, pw_hash, del_token_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO clips (id, ciphertext, burn, expires_at, ip, pw_salt, pw_hash, del_token_hash, max_reads, read_count, pw_rounds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   );
   for (let attempt = 0; attempt < 5; attempt++) {
     try {
-      stmt.run(newId(), row.ciphertext, row.burn, row.expires_at, row.ip, row.pw_salt, row.pw_hash, row.del_token_hash);
+      stmt.run(newId(), row.ciphertext, row.burn, row.expires_at, row.ip, row.pw_salt, row.pw_hash, row.del_token_hash, row.max_reads || 0, row.read_count || 0, row.pw_rounds || PBKDF2_ROUNDS);
       return true;
     } catch (e) {
       if (!String(e.message).includes('UNIQUE')) throw e;
@@ -248,13 +283,23 @@ function insertClip(row) {
   return false;
 }
 
-// 口令 → PBKDF2 派生哈希（服务端只见哈希）
-function derivePassword(pw, salt) {
-  return crypto.pbkdf2Sync(pw, salt, 120000, 32, 'sha256').toString('hex');
+// 口令 → PBKDF2 派生哈希。异步版（worker 线程池执行，不阻塞事件循环）：
+// 轮数按 OWASP 2023 建议 60 万（原 12 万为吞吐妥协，2026 GPU 破解成本已不足，提升）。
+// 兼容说明：旧 clip 存的 12 万轮哈希用 PBKDF2_ROUNDS_LEGACY 校验，新写入一律 60 万。
+const PBKDF2_ROUNDS = parseInt(process.env.PBKDF2_ROUNDS || '600000', 10);
+const PBKDF2_ROUNDS_LEGACY = 120000;
+function pbkdf2Async(pw, salt, rounds) {
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(pw, salt, rounds, 32, 'sha256', (err, key) =>
+      err ? reject(err) : resolve(key.toString('hex')));
+  });
+}
+async function derivePassword(pw, salt, rounds = PBKDF2_ROUNDS) {
+  return pbkdf2Async(pw, salt, rounds);
 }
 
-// 创建
-app.post('/api/clips', writeLimiter, (req, res) => {
+// 创建（async：口令 PBKDF2 异步派生）
+app.post('/api/clips', writeLimiter, async (req, res) => {
   const { ciphertext, burn, ttl, password } = req.body || {};
   if (typeof ciphertext !== 'string' || !ciphertext.length) {
     return res.status(400).json({ error: 'ciphertext required' });
@@ -281,24 +326,29 @@ app.post('/api/clips', writeLimiter, (req, res) => {
     return res.status(429).json({ error: `quota exceeded (max ${MAX_CLIPS_PER_IP} active clips)` });
   }
 
-  // 可选口令：明文不落盘，只存 PBKDF2 哈希
+  // 可选口令：明文不落盘，只存 PBKDF2 哈希（异步派生，不阻塞事件循环）
   let pw_salt = null, pw_hash = null;
   if (typeof password === 'string' && password.length) {
     if (password.length < 4 || password.length > 128) {
       return res.status(400).json({ error: 'password must be 4-128 chars' });
     }
     pw_salt = crypto.randomBytes(16).toString('hex');
-    pw_hash = derivePassword(password, pw_salt);
+    pw_hash = await derivePassword(password, pw_salt);
   }
+
+  // 可选阅读次数上限（max_reads）：0/缺省 = 不限；1 等价阅后即焚的次数语义
+  let maxReads = parseInt(req.body && req.body.max_reads, 10);
+  if (!Number.isFinite(maxReads) || maxReads < 0) maxReads = 0;
+  maxReads = Math.min(maxReads, 1000);
 
   const expiresAt = Date.now() + ttlSeconds * 1000;
   // 创建者自删令牌：明文只在创建响应里出现一次，服务端只存 SHA-256 哈希
   const delToken = crypto.randomBytes(24).toString('hex');
   const delTokenHash = crypto.createHash('sha256').update(delToken).digest('hex');
-  const ok = insertClip({ ciphertext, burn: burn ? 1 : 0, expires_at: expiresAt, ip, pw_salt, pw_hash, del_token_hash: delTokenHash });
+  const ok = insertClip({ ciphertext, burn: burn ? 1 : 0, expires_at: expiresAt, ip, pw_salt, pw_hash, del_token_hash: delTokenHash, max_reads: maxReads, read_count: 0 });
   if (!ok) return res.status(500).json({ error: 'id collision' });
   const id = db.prepare('SELECT id FROM clips WHERE rowid = last_insert_rowid()').get().id;
-  res.json({ id, expires_at: expiresAt, protected: !!pw_hash, delete_token: delToken });
+  res.json({ id, expires_at: expiresAt, protected: !!pw_hash, delete_token: delToken, max_reads: maxReads || null });
 });
 
 // 创建者自删：凭删除令牌（body 传递，不进 URL/日志）；令牌哈希比对，误删有口令的内容仍需先过口令吗——不需要，删除不暴露密文
@@ -318,26 +368,40 @@ app.delete('/api/clips/:id', writeLimiter, (req, res) => {
   res.json({ deleted: true });
 });
 
-// 读取（阅后即焚：读后即删，事务保证原子性；带口令需验证）
+// 读取（阅后即焚/次数上限：读后计数或即删；带口令需验证；async：口令异步派生）
 // 口令通过 POST body 传递，不走 URL query（避免进访问日志/浏览器历史）
-app.post('/api/clips/:id/read', readLimiter, pwLimiter, (req, res) => {
+app.post('/api/clips/:id/read', readLimiter, pwLimiter, async (req, res) => {
   const row = db.prepare('SELECT * FROM clips WHERE id = ?').get(req.params.id);
   if (!row) return res.status(404).json({ error: 'not found or expired' });
   if (Date.now() > row.expires_at) {
     db.prepare('DELETE FROM clips WHERE id = ?').run(row.id);
     return res.status(404).json({ error: 'not found or expired' });
   }
-  // 口令校验（timingSafeEqual 防时序侧信道）
+  // 口令校验（timingSafeEqual 防时序侧信道；按该 clip 存档的轮数派生，兼容 12 万旧数据）
   if (row.pw_hash) {
     const pw = String((req.body || {}).pw || '');
-    const calc = derivePassword(pw, row.pw_salt);
+    const rounds = row.pw_rounds || PBKDF2_ROUNDS_LEGACY;
+    const calc = await derivePassword(pw, row.pw_salt, rounds);
     const a = Buffer.from(calc, 'hex'), b = Buffer.from(row.pw_hash, 'hex');
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
       return res.status(401).json({ error: 'password required or wrong', protected: true });
     }
   }
-  if (row.burn) db.prepare('DELETE FROM clips WHERE id = ?').run(row.id);
-  res.json({ ciphertext: row.ciphertext, burn: !!row.burn, protected: !!row.pw_hash });
+  // 次数上限：递增后超限则拒绝并删除（原子事务，防并发超额读）
+  if (row.max_reads > 0) {
+    const exceeded = db.transaction(() => {
+      const n = db.prepare('UPDATE clips SET read_count = read_count + 1 WHERE id = ? AND read_count < max_reads').run(row.id).changes;
+      if (!n) return true;
+      // 达到上限：本次是最后一次允许的读取（已计数），删除内容（下次读取 404）
+      const cur = db.prepare('SELECT read_count FROM clips WHERE id = ?').get(row.id);
+      if (cur && cur.read_count >= row.max_reads) db.prepare('DELETE FROM clips WHERE id = ?').run(row.id);
+      return false;
+    })();
+    if (exceeded) return res.status(404).json({ error: 'read limit exceeded' });
+  } else if (row.burn) {
+    db.prepare('DELETE FROM clips WHERE id = ?').run(row.id);
+  }
+  res.json({ ciphertext: row.ciphertext, burn: !!(row.burn || row.max_reads === 1), protected: !!row.pw_hash });
 });
 
 // ---------- 运维端点 ----------
@@ -407,6 +471,10 @@ setInterval(() => {
 }, 5 * 60 * 1000).unref();
 
 // 路径直达：/:id（6 位 62 字符集）直接返回查看页；其余 404 到 API
+// 首页 / 同样显式返回（express.static index:false），统一走 sendFile 注入 nonce
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 app.get('/:id([A-Za-z0-9]{6})', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
@@ -451,13 +519,34 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 
 // ---------- 定时热备（better-sqlite3 backup API，可在线执行不阻塞） ----------
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
+// 备份加密：设置 BACKUP_KEY（32 字节 hex 或任意口令）后，备份以 AES-256-GCM 加密落盘（拖库场景备份不裸奔）
+const BACKUP_KEY_RAW = process.env.BACKUP_KEY || '';
+const BACKUP_KEY = BACKUP_KEY_RAW
+  ? crypto.createHash('sha256').update(BACKUP_KEY_RAW).digest() // 任意口令归一成 32 字节密钥
+  : null;
+function encryptBackup(buf) {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', BACKUP_KEY, iv);
+  const ct = Buffer.concat([cipher.update(buf), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), ct]); // 格式：iv(12) + tag(16) + ciphertext
+}
 setInterval(() => {
   const target = path.join(BACKUP_DIR, `clipbox-${new Date().toISOString().slice(0, 10)}.db`);
+  const finalTarget = BACKUP_KEY ? target + '.enc' : target;
   db.backup(target)
-    .then(() => log('info', 'backup_ok', { target }))
+    .then(() => {
+      if (!BACKUP_KEY) { log('info', 'backup_ok', { target }); return; }
+      // 加密后删除明文临时文件
+      const plain = fs.readFileSync(target);
+      fs.writeFileSync(finalTarget, encryptBackup(plain));
+      fs.unlinkSync(target);
+      log('info', 'backup_ok_encrypted', { target: finalTarget });
+    })
     .catch(e => log('error', 'backup_failed', { message: e.message }));
-  // 只保留最近 7 个备份
-  const files = fs.readdirSync(BACKUP_DIR).filter(f => f.startsWith('clipbox-') && f.endsWith('.db')).sort();
+  // 只保留最近 7 个备份（含 .enc）
+  const files = fs.readdirSync(BACKUP_DIR)
+    .filter(f => f.startsWith('clipbox-') && (f.endsWith('.db') || f.endsWith('.db.enc')))
+    .sort();
   while (files.length > 7) {
     const old = files.shift();
     try { fs.unlinkSync(path.join(BACKUP_DIR, old)); } catch {}
