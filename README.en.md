@@ -1,6 +1,6 @@
 # ClipBox · Zero-Knowledge Online Clipboard
 
-[中文文档](README.md) | English
+[中文文档](README.md) | English | [Deploy Guide](DEPLOY.md)
 
 Self-hosted text sharing: content is encrypted **in your browser** with AES-256-GCM before upload. The key lives only in the `#` fragment of the share link (fragments are never sent to the server) — the server only ever sees ciphertext. **Even a full database leak exposes nothing.**
 
