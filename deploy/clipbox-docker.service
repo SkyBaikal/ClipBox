@@ -1,0 +1,23 @@
+[Unit]
+Description=ClipBox (Docker)
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Restart=always
+RestartSec=5
+# 密钥用 EnvironmentFile 管理：/etc/clipbox.env（chmod 600，内容 ADMIN_TOKEN=... BACKUP_KEY=...）
+EnvironmentFile=-/etc/clipbox.env
+ExecStartPre=-/usr/bin/docker rm -f clipbox
+ExecStart=/usr/bin/docker run --name clipbox \
+  -p 127.0.0.1:3000:3000 \
+  -v /opt/clipbox/data:/app/data \
+  -v /opt/clipbox/backups:/app/backups \
+  -e BACKUP_DIR=/app/backups \
+  -e TRUST_PROXY=1 \
+  --restart unless-stopped \
+  clipbox:1.5.0
+ExecStop=/usr/bin/docker stop clipbox
+
+[Install]
+WantedBy=multi-user.target
