@@ -129,6 +129,7 @@
   </div>
   <textarea id="content" readonly hidden></textarea>
   <div id="rendered" class="md" hidden></div>
+  <button id="viewtoggle" class="icon" hidden></button>
   <div class="row">
     <button id="copy" class="secondary" hidden data-i18n="copyBtn">复制到剪切板</button>
     <button id="del" class="secondary danger" hidden data-i18n="delBtn">删除此内容</button>
@@ -191,6 +192,7 @@ const I18N = {
     keyPrompt: '链接中不含密钥，请粘贴密钥（创建时 # 后面那段）：',
     keyPh: '例如 a2V5.aml2…', pwPh: '访问口令（如有）', unlockBtn: '解密查看',
     copyBtn: '复制到剪切板', copied: '已复制 ✓',
+    viewRaw: '📄 查看原文', viewRendered: '✨ 渲染视图',
     emptyAlert: '内容为空', createFail: '创建失败：',
     fullLink: '✅ 完整链接（含密钥）：', bareLink: '🔒 无密钥链接（密钥需单独发送）：',
     keyNote: '密钥：', keyNoteHint: '（建议与链接分开两条消息发送）',
@@ -216,6 +218,7 @@ const I18N = {
     keyPrompt: 'This link has no key. Paste the key (the part after # when it was created):',
     keyPh: 'e.g. a2V5.aml2…', pwPh: 'Access password (if set)', unlockBtn: 'Decrypt',
     copyBtn: 'Copy to clipboard', copied: 'Copied ✓',
+    viewRaw: '📄 Raw view', viewRendered: '✨ Rendered view',
     emptyAlert: 'Content is empty', createFail: 'Create failed: ',
     fullLink: '✅ Full link (with key): ', bareLink: '🔒 Keyless link (send the key separately):',
     keyNote: 'Key: ', keyNoteHint: ' (recommended to send separately from the link)',
@@ -394,6 +397,16 @@ async function fetchAndDecrypt(keyPart) {
           });
         }
         ta.hidden = true; md.hidden = false;
+        // 渲染成功 → 显示"查看原文/渲染视图"切换（复制代码/看 Markdown 源码时用）
+        const toggle = document.getElementById('viewtoggle');
+        toggle.hidden = false;
+        let showingRaw = false;
+        toggle.onclick = () => {
+          showingRaw = !showingRaw;
+          ta.hidden = !showingRaw; md.hidden = showingRaw;
+          toggle.textContent = showingRaw ? t('viewRendered') : t('viewRaw');
+        };
+        toggle.textContent = t('viewRaw');
       } catch (e) { md.hidden = true; ta.hidden = false; }
     } else {
       md.hidden = true; ta.hidden = false;
