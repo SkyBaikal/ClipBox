@@ -16,11 +16,12 @@
     --border: #343b46; --accent: #3b82f6; --danger: #f87171; --ok: #4ade80; --code-bg: #232a33;
   }
   * { box-sizing: border-box; }
-  body { font-family: system-ui, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: var(--text); }
+  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: var(--text); }
   h1 { font-size: 1.3rem; }
+  h3 { margin: .1rem 0 .6rem; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem; margin: 1rem 0; }
   input, button, select { font: inherit; }
-  input { padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+  input, select { padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
   button { padding: .5rem 1rem; border: 0; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; }
   button.secondary { background: var(--code-bg); color: var(--text); border: 1px solid var(--border); }
   button.danger { background: var(--danger); color: #fff; }
@@ -38,6 +39,15 @@
   .row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
   #panel { display: none; }
   code { background: var(--code-bg); padding: .1rem .35rem; border-radius: 4px; font-size: .9em; }
+  /* 标签页 */
+  .tabs { display: flex; gap: .3rem; margin: 1rem 0 .5rem; flex-wrap: wrap; }
+  .tab { padding: .45rem 1rem; border-radius: 8px 8px 0 0; cursor: pointer; background: none; border: 1px solid transparent; color: var(--text-dim); }
+  .tab.active { background: var(--card); border-color: var(--border); color: var(--text); font-weight: 500; }
+  .tabpage { display: none; }
+  .tabpage.active { display: block; }
+  .badge { display: inline-block; padding: .05rem .5rem; border-radius: 99px; font-size: .78rem; border: 1px solid var(--border); }
+  .badge.on { color: var(--ok); border-color: var(--ok); }
+  .badge.off { color: var(--text-dim); }
 </style>
 </head>
 <body>
@@ -49,41 +59,86 @@
   <p><b>管理员令牌</b>（即服务端 ADMIN_TOKEN）</p>
   <div class="row">
     <input id="token" type="password" style="flex:1;min-width:220px" autocomplete="current-password" placeholder="ADMIN_TOKEN">
-    <button onclick="login()">登录</button>
+    <button id="btnLogin">登录</button>
   </div>
   <p id="loginMsg" class="hint">令牌只存 sessionStorage（关闭标签即失效），不落盘、不进 Cookie。</p>
 </div>
 
 <!-- 面板 -->
 <div id="panel">
-  <div class="card">
-    <div class="stats" id="stats"></div>
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-tab="overview">📊 概览</button>
+    <button class="tab" data-tab="invites">🎫 邀请码</button>
+    <button class="tab" data-tab="clips">📋 内容</button>
+    <button class="tab" data-tab="backups">💾 备份</button>
   </div>
 
-  <div class="card">
-    <h3 style="margin:.1rem 0 .6rem">🔐 邀请码</h3>
-    <p class="hint">启用后，创建内容需携带邀请码（读取/查看不受限）。留空保存 = 关闭。</p>
-    <div class="row">
-      <input id="invite" style="flex:1;min-width:200px" placeholder="邀请码（4-64 字符）">
-      <button onclick="saveInvite()">保存</button>
-      <button class="secondary" onclick="genInvite()">随机生成</button>
-      <span id="inviteState"></span>
+  <!-- 概览：统计 + 健康 + 批量清理 -->
+  <div class="tabpage active" id="tab-overview">
+    <div class="card">
+      <div class="stats" id="stats"></div>
+    </div>
+    <div class="card">
+      <h3>❤️ 服务健康</h3>
+      <div class="stats" id="health"></div>
+      <p class="hint" id="healthTime"></p>
+    </div>
+    <div class="card">
+      <h3>🧹 批量清理</h3>
+      <p class="hint">删除操作不可恢复；只影响服务端密文与元数据。</p>
+      <div class="row">
+        <button id="btnCleanExpired" class="danger">清除全部已过期</button>
+        <button id="btnCleanBurned" class="danger">清除焚毁残留</button>
+        <button id="btnCleanAll" class="danger">⚠️ 清空全部内容</button>
+      </div>
+      <p id="cleanMsg" class="hint"></p>
     </div>
   </div>
 
-  <div class="card">
-    <div class="row" style="justify-content:space-between">
-      <h3 style="margin:.1rem">📋 内容列表（最近 500 条，仅元数据）</h3>
-      <button class="ghost" onclick="loadList()">刷新</button>
+  <!-- 邀请码：多码管理 -->
+  <div class="tabpage" id="tab-invites">
+    <div class="card">
+      <h3>🎫 邀请码列表</h3>
+      <p class="hint">启用后创建内容需携带任一有效邀请码；读取不受限。单码可独立作废（泄露/人员变动时精准吊销）。</p>
+      <div class="row" style="margin:.6rem 0">
+        <input id="newInvite" style="flex:1;min-width:200px" placeholder="新邀请码（留空则随机生成）">
+        <input id="inviteLabel" style="max-width:160px" placeholder="备注（如：同事群）">
+        <button id="btnAddInvite">添加</button>
+      </div>
+      <div style="overflow-x:auto"><table id="inviteList"></table></div>
     </div>
-    <div style="overflow-x:auto">
-      <table id="list"></table>
+  </div>
+
+  <!-- 内容列表 -->
+  <div class="tabpage" id="tab-clips">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:.1rem">📋 内容列表（最近 500 条，仅元数据）</h3>
+        <button id="btnRefreshList" class="ghost">刷新</button>
+      </div>
+      <div style="overflow-x:auto"><table id="list"></table></div>
+    </div>
+  </div>
+
+  <!-- 备份 -->
+  <div class="tabpage" id="tab-backups">
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:.1rem">💾 备份文件</h3>
+        <div class="row">
+          <button id="btnRefreshBackups" class="ghost">刷新</button>
+          <button id="btnBackupNow">立即备份</button>
+        </div>
+      </div>
+      <p class="hint">加密备份（.db.enc）恢复方式：<code>BACKUP_KEY=xxx scripts/restore.sh &lt;file&gt;</code></p>
+      <div style="overflow-x:auto"><table id="backupList"></table></div>
     </div>
   </div>
 
   <div class="row">
-    <button class="ghost" onclick="logout()">退出登录</button>
-    <a href="/" class="hint" style="margin-left:auto">← 返回首页</a>
+    <button id="btnLogout" class="ghost">退出登录</button>
+    <span class="hint" id="verInfo" style="margin-left:auto"></span>
+    <a href="/" class="hint">← 返回首页</a>
   </div>
 </div>
 
@@ -92,8 +147,34 @@ const $ = id => document.getElementById(id);
 const TOKEN_KEY = 'clipbox_admin_token';
 let token = sessionStorage.getItem(TOKEN_KEY) || '';
 
-// 主题跟随系统（与主站一致，独立小页面不做手动切换）
+// 主题跟随系统
 if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark');
+
+// 标签页切换（切到对应页时懒加载其数据）
+document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('.tabpage').forEach(p => p.classList.toggle('active', p.id === 'tab-' + t.dataset.tab));
+  const loaders = { invites: loadInvites, clips: loadList, backups: loadBackups, overview: () => { loadStats(); loadHealth(); } };
+  loaders[t.dataset.tab] && loaders[t.dataset.tab]();
+});
+
+// 事件绑定（CSP 禁内联 onclick，全部用 addEventListener/委托）
+$('btnLogin').addEventListener('click', login);
+$('btnLogout').addEventListener('click', () => logout(false));
+$('btnAddInvite').addEventListener('click', addInvite);
+$('btnRefreshList').addEventListener('click', loadList);
+$('btnRefreshBackups').addEventListener('click', loadBackups);
+$('btnBackupNow').addEventListener('click', triggerBackup);
+$('btnCleanExpired').addEventListener('click', () => bulkCleanup('expired'));
+$('btnCleanBurned').addEventListener('click', () => bulkCleanup('burned'));
+$('btnCleanAll').addEventListener('click', () => bulkCleanup('all'));
+// 动态生成的按钮（邀请码作废/恢复、clip 删除）用事件委托
+document.addEventListener('click', e => {
+  const b = e.target.closest('button[data-op]');
+  if (b) inviteOp(b.dataset.op, b.dataset.id);
+  const d = e.target.closest('button[data-del]');
+  if (d) delClip(d.dataset.del);
+});
 
 function authHeaders() { return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }; }
 async function api(path, opts = {}) {
@@ -129,9 +210,11 @@ $('token').addEventListener('keydown', e => { if (e.key === 'Enter') login(); })
 async function showPanel() {
   $('login').style.display = 'none';
   $('panel').style.display = 'block';
-  await Promise.all([loadStats(), loadList(), loadSettings()]);
+  loadStats(); loadHealth();
+  api('/versionz').then(v => $('verInfo').textContent = `v${v.version} (${v.git_sha})`).catch(() => {});
 }
 
+// ---------- 概览 ----------
 async function loadStats() {
   const s = await api('/api/admin/stats');
   $('stats').innerHTML = [
@@ -140,25 +223,64 @@ async function loadStats() {
   ].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
 }
 
-async function loadSettings() {
-  const s = await api('/api/admin/settings');
-  $('invite').value = s.invite_code || '';
-  $('inviteState').innerHTML = s.invite_enabled
-    ? '<span class="ok">✓ 已启用</span>'
-    : '<span class="hint">未启用（任何人可创建）</span>';
-}
-
-async function saveInvite() {
+async function loadHealth() {
   try {
-    const r = await api('/api/admin/settings', { method: 'POST', body: JSON.stringify({ invite_code: $('invite').value.trim() }) });
-    $('inviteState').innerHTML = r.invite_enabled ? '<span class="ok">✓ 已启用</span>' : '<span class="hint">已关闭</span>';
-  } catch (e) { $('inviteState').innerHTML = '<span class="err">' + e.message + '</span>'; }
+    const [h, m] = await Promise.all([fetch('/healthz').then(r => r.json()), fetch('/metricsz').then(r => r.json())]);
+    const up = m.uptime_s, day = Math.floor(up / 86400), hr = Math.floor(up % 86400 / 3600);
+    $('health').innerHTML = [
+      ['状态', '✅ 正常'], ['运行时长', (day ? day + '天' : '') + hr + '时'],
+      ['DB 大小', (m.db_bytes / 1024).toFixed(0) + ' KB'], ['磁盘余量', m.disk_free_mb + ' MB'],
+      ['累计请求', m.requests], ['5xx 错误', m.errors_5xx]
+    ].map(([k, v]) => `<div class="stat"><b style="font-size:1.1rem">${v}</b><span>${k}</span></div>`).join('');
+    $('healthTime').textContent = '更新于 ' + new Date().toLocaleTimeString() + '（切走再切回本页可刷新）';
+  } catch (e) {
+    $('health').innerHTML = '<div class="stat"><b style="font-size:1rem" class="err">健康检查失败</b><span>' + e.message + '</span></div>';
+  }
 }
-function genInvite() { $('invite').value = crypto.randomUUID().slice(0, 8); }
 
+async function bulkCleanup(kind) {
+  const labels = { expired: '全部已过期内容', burned: '焚毁残留', all: '全部内容（含未过期！）' };
+  if (!confirm('确认删除' + labels[kind] + '？不可恢复。')) return;
+  try {
+    const r = await api('/api/admin/cleanup', { method: 'POST', body: JSON.stringify({ kind }) });
+    $('cleanMsg').innerHTML = '<span class="ok">已删除 ' + r.deleted + ' 条</span>';
+    loadStats(); loadList();
+  } catch (e) { $('cleanMsg').innerHTML = '<span class="err">' + e.message + '</span>'; }
+}
+
+// ---------- 邀请码（多码） ----------
+async function loadInvites() {
+  const d = await api('/api/admin/invites');
+  $('inviteList').innerHTML = '<tr><th>邀请码</th><th>备注</th><th>创建时间</th><th>状态</th><th></th></tr>' +
+    (d.invites.length ? d.invites.map(i => `<tr>
+      <td><code>${i.code}</code></td>
+      <td>${i.label || '—'}</td>
+      <td>${new Date(i.created_at).toLocaleDateString()}</td>
+      <td><span class="badge ${i.revoked ? 'off' : 'on'}">${i.revoked ? '已作废' : '有效'}</span></td>
+      <td>${i.revoked
+        ? `<button class="ghost" data-op="restore" data-id="${i.id}">恢复</button>`
+        : `<button class="ghost" data-op="revoke" data-id="${i.id}">作废</button>`}</td>
+    </tr>`).join('') : '<tr><td colspan="5" class="hint">暂无邀请码（任何人可创建）</td></tr>');
+}
+
+async function addInvite() {
+  const code = $('newInvite').value.trim() || crypto.randomUUID().slice(0, 8);
+  try {
+    await api('/api/admin/invites', { method: 'POST', body: JSON.stringify({ code, label: $('inviteLabel').value.trim() }) });
+    $('newInvite').value = ''; $('inviteLabel').value = '';
+    loadInvites();
+  } catch (e) { alert('添加失败：' + e.message); }
+}
+
+async function inviteOp(op, id) {
+  if (op === 'revoke' && !confirm('作废此邀请码？使用它的人将无法再创建新内容。')) return;
+  await api('/api/admin/invites/' + id, { method: 'POST', body: JSON.stringify({ op }) });
+  loadInvites();
+}
+
+// ---------- 内容 ----------
 function fmtTime(ts) {
-  const d = new Date(ts);
-  return d.toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  return new Date(ts).toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
 async function loadList() {
@@ -171,7 +293,7 @@ async function loadList() {
       <td>${c.protected ? '🔑' : c.burn ? '🔥' : ''}</td>
       <td>${c.expires_at > now ? '存活' : '已过期'}</td>
       <td>${fmtTime(c.expires_at)}</td>
-      <td><button class="ghost" onclick="delClip('${c.id}')">删</button></td>
+      <td><button class="ghost" data-del="${c.id}">删</button></td>
     </tr>`).join('') || '<tr><td colspan="6" class="hint">空</td></tr>';
 }
 
@@ -179,6 +301,27 @@ async function delClip(id) {
   if (!confirm('删除 ' + id + '？不可恢复。')) return;
   try { await api('/api/admin/clips/' + id, { method: 'DELETE' }); loadList(); loadStats(); }
   catch (e) { alert('删除失败：' + e.message); }
+}
+
+// ---------- 备份 ----------
+async function loadBackups() {
+  try {
+    const d = await api('/api/admin/backups');
+    $('backupList').innerHTML = '<tr><th>文件</th><th>大小</th><th>生成时间</th></tr>' +
+      (d.backups.length ? d.backups.map(b => `<tr>
+        <td><code>${b.name}</code></td>
+        <td>${(b.size / 1024).toFixed(1)} KB</td>
+        <td>${fmtTime(b.mtime)}</td>
+      </tr>`).join('') : '<tr><td colspan="3" class="hint">暂无备份</td></tr>');
+  } catch (e) { $('backupList').innerHTML = '<tr><td class="err">' + e.message + '</td></tr>'; }
+}
+
+async function triggerBackup() {
+  try {
+    const r = await api('/api/admin/backup', { method: 'POST' });
+    alert('备份完成：' + r.file);
+    loadBackups();
+  } catch (e) { alert('备份失败：' + e.message); }
 }
 
 // 已有会话令牌直接进面板

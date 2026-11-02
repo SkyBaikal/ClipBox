@@ -123,6 +123,15 @@ function setSetting(key, value) {
     .run(key, value);
 }
 
+// 邀请码表（多码：每人/每批独立发放，可单独作废/恢复）
+db.exec(`CREATE TABLE IF NOT EXISTS invite_codes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  label TEXT NOT NULL DEFAULT '',
+  revoked INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+)`);
+
 // 索引必须在列迁移之后建（旧库的 ip 列由迁移补出）
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_clips_expires ON clips (expires_at);
@@ -319,12 +328,13 @@ app.post('/api/clips', writeLimiter, async (req, res) => {
   if (ciphertext.length > MAX_BODY) {
     return res.status(413).json({ error: 'too large' });
   }
-  // 邀请码（运营设置，管理后台可开关）：设置后创建需携带正确 invite_code，读取不受限
-  const invite = getSetting('invite_code');
-  if (invite) {
+  // 邀请码（多码模式，invite_codes 表；单码 settings 兼容迁移）：任一有效码即可创建
+  const nActiveInvites = db.prepare('SELECT COUNT(*) AS n FROM invite_codes WHERE revoked = 0').get().n;
+  if (nActiveInvites > 0) {
     const given = String((req.body || {}).invite_code || '');
-    const a = Buffer.from(given), b = Buffer.from(invite);
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    const ok = db.prepare('SELECT 1 FROM invite_codes WHERE code = ? AND revoked = 0').get(given);
+    // 非常量路径但查询本身不受输入影响（索引等值查找），且拒绝响应统一为 403，无时序侧信道增益
+    if (!ok) {
       return res.status(403).json({ error: 'invite code required or wrong', invite_required: true });
     }
   }
@@ -440,6 +450,8 @@ app.get('/versionz', (req, res) => {
 
 // 指标端点（供监控拉取；无敏感数据）
 app.get('/metricsz', (req, res) => {
+  const free = diskFreeMB();
+  if (free >= 0) metrics.disk_free_mb = free; // 请求时即时刷新，消除 5 分钟巡检周期的冷启动窗口
   res.json({
     ...metrics,
     active_clips: db.prepare('SELECT COUNT(*) AS n FROM clips WHERE expires_at > ?').get(Date.now()).n,
@@ -486,6 +498,86 @@ app.post('/api/admin/settings', requireAdmin, (req, res) => {
     log('info', 'settings_invite_disabled', {});
   }
   res.json({ invite_enabled: !!code });
+});
+
+// ---------- 邀请码（多码管理） ----------
+app.get('/api/admin/invites', requireAdmin, (req, res) => {
+  const invites = db.prepare('SELECT id, code, label, revoked, created_at FROM invite_codes ORDER BY created_at DESC').all();
+  res.json({ invites });
+});
+
+app.post('/api/admin/invites', requireAdmin, (req, res) => {
+  const code = String((req.body || {}).code || '').trim();
+  const label = String((req.body || {}).label || '').trim().slice(0, 64);
+  if (!/^[A-Za-z0-9_-]{4,64}$/.test(code)) {
+    return res.status(400).json({ error: 'invite_code must be 4-64 chars [A-Za-z0-9_-]' });
+  }
+  try {
+    db.prepare('INSERT INTO invite_codes (code, label, created_at) VALUES (?, ?, ?)').run(code, label, Date.now());
+  } catch (e) {
+    if (String(e.message).includes('UNIQUE')) return res.status(409).json({ error: 'invite code already exists' });
+    throw e;
+  }
+  log('info', 'invite_created', {});
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/invites/:id', requireAdmin, (req, res) => {
+  const op = (req.body || {}).op;
+  if (op !== 'revoke' && op !== 'restore') return res.status(400).json({ error: 'op must be revoke|restore' });
+  const n = db.prepare('UPDATE invite_codes SET revoked = ? WHERE id = ?').run(op === 'revoke' ? 1 : 0, req.params.id).changes;
+  if (!n) return res.status(404).json({ error: 'not found' });
+  log('info', 'invite_' + op, { id: req.params.id });
+  res.json({ ok: true });
+});
+
+// ---------- 批量清理 ----------
+app.post('/api/admin/cleanup', requireAdmin, (req, res) => {
+  const kind = (req.body || {}).kind;
+  let sql;
+  if (kind === 'expired') sql = 'DELETE FROM clips WHERE expires_at <= ?';
+  else if (kind === 'burned') sql = "DELETE FROM clips WHERE burn = 1 AND read_count > 0";  // 已被读取的焚毁件残留
+  else if (kind === 'all') sql = 'DELETE FROM clips';
+  else return res.status(400).json({ error: 'kind must be expired|burned|all' });
+  const n = kind === 'expired'
+    ? db.prepare(sql).run(Date.now()).changes
+    : db.prepare(sql).run().changes;
+  log('info', 'admin_cleanup', { kind, removed: n });
+  res.json({ deleted: n });
+});
+
+// ---------- 备份管理 ----------
+app.get('/api/admin/backups', requireAdmin, (req, res) => {
+  const files = fs.readdirSync(BACKUP_DIR)
+    .filter(f => f.startsWith('clipbox-') && (f.endsWith('.db') || f.endsWith('.db.enc')))
+    .map(f => {
+      const st = fs.statSync(path.join(BACKUP_DIR, f));
+      return { name: f, size: st.size, mtime: st.mtimeMs };
+    })
+    .sort((a, b) => b.mtime - a.mtime);
+  res.json({ backups: files });
+});
+
+app.post('/api/admin/backup', requireAdmin, (req, res) => {
+  const target = path.join(BACKUP_DIR, `clipbox-manual-${Date.now()}.db`);
+  db.backup(target)
+    .then(() => {
+      if (BACKUP_KEY) {
+        const plain = fs.readFileSync(target);
+        const iv = crypto.randomBytes(12);
+        const c = crypto.createCipheriv('aes-256-gcm', BACKUP_KEY, iv);
+        const ct = Buffer.concat([c.update(plain), c.final()]);
+        fs.writeFileSync(target + '.enc', Buffer.concat([iv, c.getAuthTag(), ct]));
+        fs.unlinkSync(target);
+      }
+      const finalName = path.basename(target) + (BACKUP_KEY ? '.enc' : '');
+      log('info', 'backup_manual_ok', { file: finalName });
+      res.json({ file: finalName });
+    })
+    .catch(e => {
+      log('error', 'backup_manual_failed', { message: e.message });
+      res.status(500).json({ error: e.message });
+    });
 });
 
 // 列出 ID（只列元数据，绝不返回密文）
