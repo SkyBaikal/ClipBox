@@ -20,6 +20,7 @@ RUN groupadd -r clipbox && useradd -r -g clipbox clipbox
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY server.js package.json ./
+COPY lib ./lib
 COPY public ./public
 
 RUN mkdir -p /app/data && chown -R clipbox:clipbox /app
