@@ -118,8 +118,13 @@ app.post('/api/clips', writeLimiter, async (req, res) => {
   const nActiveInvites = db.prepare('SELECT COUNT(*) AS n FROM invite_codes WHERE revoked = 0').get().n;
   if (nActiveInvites > 0) {
     const given = String((req.body || {}).invite_code || '');
-    const ok = db.prepare('SELECT 1 FROM invite_codes WHERE code = ? AND revoked = 0').get(given);
-    // 非常量路径但查询本身不受输入影响（索引等值查找），且拒绝响应统一为 403，无时序侧信道增益
+    // 常量时间比对：取出全部有效码逐一 timingSafeEqual，避免 B-tree 查找时间随码值微变
+    const codes = db.prepare('SELECT code FROM invite_codes WHERE revoked = 0').all();
+    const givenBuf = Buffer.from(given);
+    const ok = codes.some(c => {
+      const cb = Buffer.from(c.code);
+      return cb.length === givenBuf.length && crypto.timingSafeEqual(cb, givenBuf);
+    });
     if (!ok) {
       return res.status(403).json({ error: 'invite code required or wrong', invite_required: true });
     }
