@@ -25,7 +25,8 @@ Pure JavaScript stack (Node.js + Express + SQLite), only 3 production dependenci
 - ✅ Same-origin enforcement (cross-origin writes rejected with 403)
 - ✅ Security headers (CSP, nosniff, X-Frame-Options: DENY, no-referrer)
 - ✅ Health check `GET /healthz`
-- ✅ Admin API (requires `ADMIN_TOKEN`; stats / list / delete / purge — never returns ciphertext)
+- ✅ Admin panel `/admin` (requires `ADMIN_TOKEN`; stats / health / multi invite codes / bulk cleanup / backup management / metadata-only listing — **ciphertext can never be viewed**)
+- ✅ Multiple invite codes (issue/revoke/restore per code; when enabled, creating requires a valid code — reading stays unrestricted)
 - ✅ 64KB size cap (chunked base64 conversion, no stack overflow risk)
 
 ## Operations & Observability

@@ -8,51 +8,76 @@
   /* ---------- 主题变量：亮/暗双主题，跟随系统 + 手动切换 ---------- */
   :root {
     color-scheme: light;
-    --bg: #f5f6f8;
+    --bg: #eef2f6;
+    --bg-grad: radial-gradient(1200px 600px at 15% -10%, #d8f3ef 0%, transparent 55%),
+               radial-gradient(1000px 500px at 90% 0%, #e4e9ff 0%, transparent 50%);
     --card: #ffffff;
-    --text: #1a1d21;
-    --text-dim: #6b7280;
-    --border: #d5d9e0;
-    --accent: #2563eb;
-    --accent-hover: #1d4ed8;
+    --text: #14212b;
+    --text-dim: #64748b;
+    --border: #dbe2ea;
+    --accent: #0d9488;
+    --accent-hover: #0f766e;
+    --accent-soft: #ccfbf1;
     --danger: #dc2626;
-    --code-bg: #eef1f5;
+    --code-bg: #f0f4f8;
+    --shadow: 0 4px 24px rgb(15 40 60 / .07), 0 1px 2px rgb(15 40 60 / .04);
   }
   html.dark {
     color-scheme: dark;
-    --bg: #111418;
-    --card: #1b2027;
-    --text: #e6e9ee;
-    --text-dim: #9aa3b0;
-    --border: #343b46;
-    --accent: #3b82f6;
-    --accent-hover: #60a5fa;
+    --bg: #0d1216;
+    --bg-grad: radial-gradient(1200px 600px at 15% -10%, #0f2e2b 0%, transparent 55%),
+               radial-gradient(1000px 500px at 90% 0%, #161c33 0%, transparent 50%);
+    --card: #161d24;
+    --text: #e8edf2;
+    --text-dim: #94a3b8;
+    --border: #2a343d;
+    --accent: #2dd4bf;
+    --accent-hover: #5eead4;
+    --accent-soft: #0f3b38;
     --danger: #f87171;
-    --code-bg: #232a33;
+    --code-bg: #1e252d;
+    --shadow: 0 4px 24px rgb(0 0 0 / .35), 0 1px 2px rgb(0 0 0 / .2);
   }
   * { box-sizing: border-box; }
   body {
-    font-family: system-ui, -apple-system, sans-serif;
-    max-width: 640px; margin: 2rem auto; padding: 0 1rem;
-    background: var(--bg); color: var(--text);
-    line-height: 1.55;
-    transition: background .2s, color .2s;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 640px; margin: 2.4rem auto; padding: 0 1.1rem 3rem;
+    background: var(--bg-grad), var(--bg);
+    background-attachment: fixed;
+    color: var(--text);
+    line-height: 1.6;
+    transition: background .25s, color .2s;
+    -webkit-font-smoothing: antialiased;
   }
   .card {
     background: var(--card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 1.2rem;
-    margin: 1rem 0;
+    border-radius: 16px;
+    padding: 1.4rem;
+    margin: 1.1rem 0;
+    box-shadow: var(--shadow);
   }
-  h1 { font-size: 1.35rem; margin: .4rem 0; }
+  h1 {
+    font-size: 1.5rem; margin: .2rem 0 .5rem;
+    letter-spacing: -.02em; font-weight: 650;
+    display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap;
+  }
+  .brand {
+    background: linear-gradient(120deg, var(--accent) 0%, #6366f1 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; font-weight: 750;
+  }
+  .tagline { color: var(--text-dim); font-size: .92rem; margin: .2rem 0 1.1rem; }
   textarea, input, select {
-    width: 100%; padding: .6rem .7rem; margin: .3rem 0;
-    border: 1px solid var(--border); border-radius: 8px;
-    font: inherit; color: var(--text); background: var(--bg);
+    width: 100%; padding: .65rem .8rem; margin: .3rem 0;
+    border: 1px solid var(--border); border-radius: 10px;
+    font: inherit; color: var(--text); background: var(--card);
+    transition: border-color .15s, box-shadow .15s;
   }
+  textarea:hover, input:hover, select:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
   textarea:focus, input:focus, select:focus {
-    outline: 2px solid var(--accent); outline-offset: -1px;
+    outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
   }
   textarea { min-height: 140px; resize: vertical; }
   .row { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; margin: .6rem 0; }
@@ -62,11 +87,20 @@
   .row label.chk input { width: 1.05rem; height: 1.05rem; margin: 0; accent-color: var(--accent); cursor: pointer; }
   #ttl { width: auto; }
   button {
-    padding: .55rem 1.2rem; border: 0; border-radius: 8px;
-    background: var(--accent); color: #fff; font: inherit;
-    cursor: pointer; transition: background .15s;
+    padding: .6rem 1.3rem; border: 0; border-radius: 10px;
+    background: linear-gradient(120deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 70%, #6366f1) 100%);
+    color: #fff; font: inherit; font-weight: 550;
+    cursor: pointer;
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 28%, transparent);
+    transition: transform .15s, box-shadow .15s, filter .15s;
   }
-  button:hover { background: var(--accent-hover); }
+  button:hover {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 34%, transparent);
+  }
+  button:active { transform: translateY(0); filter: brightness(.97); }
+  html.dark button { color: #06231f; }
   button.secondary { background: var(--code-bg); color: var(--text); border: 1px solid var(--border); }
   button.secondary:hover { border-color: var(--accent); }
   button.danger, html.dark button.danger { background: var(--danger); color: #fff; border: 0; }
@@ -76,7 +110,14 @@
     border-radius: 6px; padding: .25rem .6rem; font-size: .85rem;
   }
   button.icon:hover { border-color: var(--accent); color: var(--accent); background: none; }
-  #share { font-family: ui-monospace, monospace; word-break: break-all; background: var(--code-bg); border: 1px solid var(--border); padding: .8rem; border-radius: 8px; font-size: .9rem; }
+  #share {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all;
+    background: var(--code-bg);
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+    border-left: 3px solid var(--accent);
+    padding: .95rem 1rem; border-radius: 12px; font-size: .88rem; line-height: 1.7;
+  }
   #share a { color: var(--accent); }
   .hint { color: var(--text-dim); font-size: .85rem; }
   .err { color: var(--danger); }
@@ -98,8 +139,8 @@
 <body>
 <button id="lang" class="icon" title="切换语言 / Switch language">EN</button>
 <button id="theme" class="icon" title="切换主题 / Toggle theme">🌙</button>
-<h1>📎 ClipBox · <span data-i18n="title">零知识在线剪切板</span></h1>
-<p class="hint" data-i18n="tagline">文本在浏览器内用 AES-GCM 加密后才上传，密钥只在链接 # 后面（不会发给服务器）。服务端只见密文。</p>
+<h1><span class="brand">📎 ClipBox</span> <span data-i18n="title" style="font-size:.95rem;color:var(--text-dim);font-weight:500">零知识在线剪切板</span></h1>
+<p class="tagline" data-i18n="tagline">文本在浏览器内用 AES-256-GCM 加密后才上传，密钥只在链接 # 后面（不会发给服务器）。服务端只见密文。</p>
 
 <div id="compose">
   <div class="card">

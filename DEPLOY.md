@@ -1,6 +1,6 @@
 # ClipBox 部署指南（Deploy Guide）
 
-面向"拿到仓库的人能独立部署"。三种路径按推荐顺序排列，全部基于已验证的操作（v1.5.x，Docker 镜像实测构建+运行+数据卷持久化）。
+面向"拿到仓库的人能独立部署"。三种路径按推荐顺序排列，全部基于已验证的操作（v1.9.x，Docker 镜像实测构建+运行+数据卷持久化；CI 亦验证构建）。
 
 ## 前置条件
 
@@ -13,15 +13,15 @@
 本机或 CI 构建镜像并导出：
 
 ```bash
-docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t clipbox:1.5.1 .
-docker save clipbox:1.5.1 | gzip > clipbox-1.5.1.tar.gz   # ~85MB
-scp clipbox-1.5.1.tar.gz user@SERVER:~/
+docker build --build-arg GIT_SHA=$(git rev-parse --short HEAD) -t clipbox:1.9.0 .
+docker save clipbox:1.9.0 | gzip > clipbox-1.9.0.tar.gz   # ~85MB
+scp clipbox-1.9.0.tar.gz user@SERVER:~/
 ```
 
 服务器上：
 
 ```bash
-docker load < ~/clipbox-1.5.1.tar.gz
+docker load < ~/clipbox-1.9.0.tar.gz
 mkdir -p /opt/clipbox/data /opt/clipbox/backups
 
 # 密钥（生成后立即离线抄存！BACKUP_KEY 丢失 = 加密备份永久作废）
@@ -107,7 +107,19 @@ Nginx 等价配置需手动处理证书续期 + WebSocket 无关（本项目无 
 | `ALERT_WEBHOOK_URL` | 推荐 | 故障告警 webhook（钉钉/飞书/Slack 兼容） |
 | `BACKUP_INTERVAL_MIN` | 否 | 默认 30，0 关闭 |
 | `PBKDF2_ROUNDS` | 否 | 默认 600000 |
-| `INVITE_CODE` | 否 | 设置后创建接口需邀请码（小圈子模式） |
+| `GIT_SHA` | 否 | git 短 SHA，/versionz 展示（部署核对） |
+
+## 管理后台（v1.8+）
+
+部署后访问 `https://域名/admin`：
+
+- 登录：输入 `ADMIN_TOKEN`（仅存 sessionStorage，关标签即失效）
+- **概览**：统计卡片、服务健康（运行时长/DB/磁盘/请求）、批量清理（过期/焚毁残留/清空）
+- **邀请码**：多码管理——添加（可备注）、单码作废/恢复；启用后创建需携带任一有效码，读取不受限
+- **内容**：最近 500 条元数据（**永远无法查看密文**），单条删除
+- **备份**：备份列表 + 手动触发（自动走加密）
+
+界面中英双语（与主站共享语言选择）。
 
 ## 已知限制（部署前须知）
 

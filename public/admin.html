@@ -7,22 +7,35 @@
 <style>
   :root {
     color-scheme: light;
-    --bg: #f5f6f8; --card: #fff; --text: #1a1d21; --text-dim: #6b7280;
-    --border: #d5d9e0; --accent: #2563eb; --danger: #dc2626; --ok: #16a34a; --code-bg: #eef1f5;
+    --bg: #eef2f6;
+    --bg-grad: radial-gradient(1200px 600px at 15% -10%, #d8f3ef 0%, transparent 55%),
+               radial-gradient(1000px 500px at 90% 0%, #e4e9ff 0%, transparent 50%);
+    --card: #fff; --text: #14212b; --text-dim: #64748b;
+    --border: #dbe2ea; --accent: #0d9488; --danger: #dc2626; --ok: #16a34a; --code-bg: #f0f4f8;
+    --shadow: 0 4px 24px rgb(15 40 60 / .07), 0 1px 2px rgb(15 40 60 / .04);
   }
   html.dark {
     color-scheme: dark;
-    --bg: #111418; --card: #1b2027; --text: #e6e9ee; --text-dim: #9aa3b0;
-    --border: #343b46; --accent: #3b82f6; --danger: #f87171; --ok: #4ade80; --code-bg: #232a33;
+    --bg: #0d1216;
+    --bg-grad: radial-gradient(1200px 600px at 15% -10%, #0f2e2b 0%, transparent 55%),
+               radial-gradient(1000px 500px at 90% 0%, #161c33 0%, transparent 50%);
+    --card: #161d24; --text: #e8edf2; --text-dim: #94a3b8;
+    --border: #2a343d; --accent: #2dd4bf; --danger: #f87171; --ok: #4ade80; --code-bg: #1e252d;
+    --shadow: 0 4px 24px rgb(0 0 0 / .35), 0 1px 2px rgb(0 0 0 / .2);
   }
   * { box-sizing: border-box; }
-  body { font-family: system-ui, sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: var(--text); }
-  h1 { font-size: 1.3rem; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1.1rem 3rem; background: var(--bg-grad), var(--bg); background-attachment: fixed; color: var(--text); -webkit-font-smoothing: antialiased; }
+  h1 { font-size: 1.4rem; letter-spacing: -.02em; font-weight: 650; }
+  .brand { background: linear-gradient(120deg, var(--accent) 0%, #6366f1 100%); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; font-weight: 750; }
   h3 { margin: .1rem 0 .6rem; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem; margin: 1rem 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 1.3rem; margin: 1rem 0; box-shadow: var(--shadow); }
   input, button, select { font: inherit; }
   input, select { padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
-  button { padding: .5rem 1rem; border: 0; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; }
+  button { padding: .5rem 1.1rem; border: 0; border-radius: 10px; background: linear-gradient(120deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 70%, #6366f1) 100%); color: #fff; cursor: pointer; font-weight: 550; box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 28%, transparent); transition: transform .15s, filter .15s; }
+  button:hover { filter: brightness(1.06); transform: translateY(-1px); }
+  button:active { transform: translateY(0); }
+  html.dark button { color: #06231f; }
+  html.dark button.secondary { color: var(--text); }
   button.secondary { background: var(--code-bg); color: var(--text); border: 1px solid var(--border); }
   button.danger { background: var(--danger); color: #fff; }
   button.ghost { background: none; border: 1px solid var(--border); color: var(--text); padding: .3rem .6rem; border-radius: 6px; font-size: .85rem; }
@@ -41,7 +54,7 @@
   code { background: var(--code-bg); padding: .1rem .35rem; border-radius: 4px; font-size: .9em; }
   /* 标签页 */
   .tabs { display: flex; gap: .3rem; margin: 1rem 0 .5rem; flex-wrap: wrap; }
-  .tab { padding: .45rem 1rem; border-radius: 8px 8px 0 0; cursor: pointer; background: none; border: 1px solid transparent; color: var(--text-dim); }
+  .tab { padding: .45rem 1rem; border-radius: 8px 8px 0 0; cursor: pointer; background: none; border: 1px solid transparent; color: var(--text-dim); background: color-mix(in srgb, var(--card) 55%, transparent); }
   .tab.active { background: var(--card); border-color: var(--border); color: var(--text); font-weight: 500; }
   .tabpage { display: none; }
   .tabpage.active { display: block; }
@@ -52,7 +65,7 @@
 </head>
 <body>
 <div class="row" style="justify-content:space-between;align-items:flex-start">
-  <h1>🛠️ ClipBox <span data-i18n="adminTitle">管理后台</span></h1>
+  <h1><span class="brand">🛠️ ClipBox</span> <span data-i18n="adminTitle" style="font-size:.95rem;color:var(--text-dim);font-weight:500">管理后台</span></h1>
   <button id="lang" class="ghost" style="margin-left:auto">EN</button>
 </div>
 <p class="hint" data-i18n="subtitle">服务端只处理元数据；所有内容均为密文，此处也无法查看内容明文。</p>
