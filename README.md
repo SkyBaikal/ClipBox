@@ -14,7 +14,7 @@
 - ✅ 客户端端到端加密（零知识）
 - ✅ 可选访问口令（服务端只存 PBKDF2-SHA256 12 万轮派生哈希，校验用 timingSafeEqual 防时序侧信道；口令经 POST body 传输，不进 URL/日志）
 - ✅ 创建者自删：创建响应返回一次性删除令牌（服务端只存 SHA-256 哈希），凭令牌 `DELETE /api/clips/:id`
-- ✅ Markdown 渲染 + 代码高亮（查看端解密后渲染，marked + highlight.js 本地 vendor，服务端仍只见密文）
+- ✅ Markdown 渲染 + 代码高亮（查看端解密后渲染，marked + highlight.js 本地 vendor，服务端仍只见密文；**DOMPurify 消毒**，直插 HTML 的 XSS 面已关闭）
 - ✅ 二维码（qrcode-generator 本地渲染，无外联 CDN）
 - ✅ 路径直达查看页（`/:id` 不带密钥时手动输入密钥解密）
 - ✅ 非 HTTPS 环境检测（`crypto.subtle` 不可用时给出明确提示页）
@@ -182,4 +182,3 @@ clipbox/
 - PBKDF2 同步计算限制带口令创建吞吐（~15 req/s）
 - 备份自动进行但恢复需人工
 - 无集中式日志/告警采集（格式已就绪，接入即可）
-- Markdown 渲染使用 marked（默认不消毒）。当前"自己解密自己看"的威胁模型下风险可接受；若引入多人/协作场景需加 DOMPurify。

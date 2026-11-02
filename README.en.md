@@ -16,7 +16,7 @@ Pure JavaScript stack (Node.js + Express + SQLite), only 3 production dependenci
 - ✅ Client-side end-to-end encryption (zero knowledge)
 - ✅ Optional access password (server stores only a PBKDF2-SHA256 hash, 120k iterations; timing-safe comparison; password sent via POST body — never in URLs or logs)
 - ✅ Owner self-delete (creation response includes a one-time delete token — server stores only its SHA-256 hash; `DELETE /api/clips/:id` with the token)
-- ✅ Markdown rendering + syntax highlighting on the viewer side (vendored marked + highlight.js, no CDN; rendering happens after decryption, server still sees only ciphertext)
+- ✅ Markdown rendering + syntax highlighting on the viewer side (vendored marked + highlight.js, no CDN; rendering happens after decryption, server still sees only ciphertext; **sanitized with DOMPurify**)
 - ✅ QR code (rendered locally by qrcode-generator, no external CDN)
 - ✅ Direct-path view page (`/:id` without key → manual key entry)
 - ✅ Insecure-context detection (clear notice when `crypto.subtle` is unavailable)
@@ -138,4 +138,3 @@ Frontend requires HTTPS or localhost (Web Crypto constraint).
 - Synchronous PBKDF2 caps password-protected create throughput (~15 req/s)
 - Backups are automatic but restore is manual
 - No centralized log/alert collection (formats are ready — plug in when needed)
-- Markdown rendering uses marked (no sanitizing by default). Acceptable under the current "you decrypt your own paste" threat model; add DOMPurify if multi-user/collaborative scenarios are ever introduced.
