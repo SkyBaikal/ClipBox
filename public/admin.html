@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ClipBox Admin</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f5f6f8; --card: #fff; --text: #1a1d21; --text-dim: #6b7280;
+    --border: #d5d9e0; --accent: #2563eb; --danger: #dc2626; --ok: #16a34a; --code-bg: #eef1f5;
+  }
+  html.dark {
+    color-scheme: dark;
+    --bg: #111418; --card: #1b2027; --text: #e6e9ee; --text-dim: #9aa3b0;
+    --border: #343b46; --accent: #3b82f6; --danger: #f87171; --ok: #4ade80; --code-bg: #232a33;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; background: var(--bg); color: var(--text); }
+  h1 { font-size: 1.3rem; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem; margin: 1rem 0; }
+  input, button, select { font: inherit; }
+  input { padding: .5rem .7rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+  button { padding: .5rem 1rem; border: 0; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; }
+  button.secondary { background: var(--code-bg); color: var(--text); border: 1px solid var(--border); }
+  button.danger { background: var(--danger); color: #fff; }
+  button.ghost { background: none; border: 1px solid var(--border); color: var(--text); padding: .3rem .6rem; border-radius: 6px; font-size: .85rem; }
+  .hint { color: var(--text-dim); font-size: .85rem; }
+  .err { color: var(--danger); }
+  .ok { color: var(--ok); }
+  table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  th, td { border-bottom: 1px solid var(--border); padding: .45rem .5rem; text-align: left; word-break: break-all; }
+  th { color: var(--text-dim); font-weight: 500; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .8rem; }
+  .stat { text-align: center; }
+  .stat b { font-size: 1.6rem; display: block; }
+  .stat span { color: var(--text-dim); font-size: .85rem; }
+  .row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+  #panel { display: none; }
+  code { background: var(--code-bg); padding: .1rem .35rem; border-radius: 4px; font-size: .9em; }
+</style>
+</head>
+<body>
+<h1>🛠️ ClipBox 管理后台</h1>
+<p class="hint">服务端只处理元数据；所有内容均为密文，此处也无法查看内容明文。</p>
+
+<!-- 登录 -->
+<div id="login" class="card">
+  <p><b>管理员令牌</b>（即服务端 ADMIN_TOKEN）</p>
+  <div class="row">
+    <input id="token" type="password" style="flex:1;min-width:220px" autocomplete="current-password" placeholder="ADMIN_TOKEN">
+    <button onclick="login()">登录</button>
+  </div>
+  <p id="loginMsg" class="hint">令牌只存 sessionStorage（关闭标签即失效），不落盘、不进 Cookie。</p>
+</div>
+
+<!-- 面板 -->
+<div id="panel">
+  <div class="card">
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin:.1rem 0 .6rem">🔐 邀请码</h3>
+    <p class="hint">启用后，创建内容需携带邀请码（读取/查看不受限）。留空保存 = 关闭。</p>
+    <div class="row">
+      <input id="invite" style="flex:1;min-width:200px" placeholder="邀请码（4-64 字符）">
+      <button onclick="saveInvite()">保存</button>
+      <button class="secondary" onclick="genInvite()">随机生成</button>
+      <span id="inviteState"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="row" style="justify-content:space-between">
+      <h3 style="margin:.1rem">📋 内容列表（最近 500 条，仅元数据）</h3>
+      <button class="ghost" onclick="loadList()">刷新</button>
+    </div>
+    <div style="overflow-x:auto">
+      <table id="list"></table>
+    </div>
+  </div>
+
+  <div class="row">
+    <button class="ghost" onclick="logout()">退出登录</button>
+    <a href="/" class="hint" style="margin-left:auto">← 返回首页</a>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const TOKEN_KEY = 'clipbox_admin_token';
+let token = sessionStorage.getItem(TOKEN_KEY) || '';
+
+// 主题跟随系统（与主站一致，独立小页面不做手动切换）
+if (matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark');
+
+function authHeaders() { return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }; }
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { ...authHeaders(), ...(opts.headers || {}) } });
+  if (r.status === 401) { logout(true); throw new Error('unauthorized'); }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || r.status);
+  return r.json();
+}
+
+function logout(silent) {
+  sessionStorage.removeItem(TOKEN_KEY);
+  token = '';
+  $('panel').style.display = 'none';
+  $('login').style.display = 'block';
+  if (!silent) $('loginMsg').textContent = '已退出。';
+}
+
+async function login() {
+  token = $('token').value.trim();
+  if (!token) return;
+  try {
+    $('loginMsg').textContent = '验证中…';
+    await api('/api/admin/stats');
+    sessionStorage.setItem(TOKEN_KEY, token);
+    $('loginMsg').textContent = '';
+    showPanel();
+  } catch (e) {
+    $('loginMsg').innerHTML = '<span class="err">登录失败：' + e.message + '</span>';
+  }
+}
+$('token').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+
+async function showPanel() {
+  $('login').style.display = 'none';
+  $('panel').style.display = 'block';
+  await Promise.all([loadStats(), loadList(), loadSettings()]);
+}
+
+async function loadStats() {
+  const s = await api('/api/admin/stats');
+  $('stats').innerHTML = [
+    ['活跃', s.active], ['总数', s.total], ['焚毁中', s.burning],
+    ['密文总量', (s.ciphertext_bytes / 1024).toFixed(1) + ' KB'], ['单 IP 上限', s.max_per_ip]
+  ].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
+}
+
+async function loadSettings() {
+  const s = await api('/api/admin/settings');
+  $('invite').value = s.invite_code || '';
+  $('inviteState').innerHTML = s.invite_enabled
+    ? '<span class="ok">✓ 已启用</span>'
+    : '<span class="hint">未启用（任何人可创建）</span>';
+}
+
+async function saveInvite() {
+  try {
+    const r = await api('/api/admin/settings', { method: 'POST', body: JSON.stringify({ invite_code: $('invite').value.trim() }) });
+    $('inviteState').innerHTML = r.invite_enabled ? '<span class="ok">✓ 已启用</span>' : '<span class="hint">已关闭</span>';
+  } catch (e) { $('inviteState').innerHTML = '<span class="err">' + e.message + '</span>'; }
+}
+function genInvite() { $('invite').value = crypto.randomUUID().slice(0, 8); }
+
+function fmtTime(ts) {
+  const d = new Date(ts);
+  return d.toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+async function loadList() {
+  const d = await api('/api/admin/list');
+  const now = Date.now();
+  $('list').innerHTML = '<tr><th>ID</th><th>大小</th><th>保护</th><th>状态</th><th>过期</th><th></th></tr>' +
+    d.clips.map(c => `<tr>
+      <td><code><a href="/${c.id}" target="_blank">${c.id}</a></code></td>
+      <td>${c.size} B</td>
+      <td>${c.protected ? '🔑' : c.burn ? '🔥' : ''}</td>
+      <td>${c.expires_at > now ? '存活' : '已过期'}</td>
+      <td>${fmtTime(c.expires_at)}</td>
+      <td><button class="ghost" onclick="delClip('${c.id}')">删</button></td>
+    </tr>`).join('') || '<tr><td colspan="6" class="hint">空</td></tr>';
+}
+
+async function delClip(id) {
+  if (!confirm('删除 ' + id + '？不可恢复。')) return;
+  try { await api('/api/admin/clips/' + id, { method: 'DELETE' }); loadList(); loadStats(); }
+  catch (e) { alert('删除失败：' + e.message); }
+}
+
+// 已有会话令牌直接进面板
+if (token) { $('token').value = ''; login(); }
+</script>
+</body>
+</html>

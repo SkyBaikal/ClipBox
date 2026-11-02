@@ -194,6 +194,7 @@ const I18N = {
     copyBtn: '复制到剪切板', copied: '已复制 ✓',
     viewRaw: '📄 查看原文', viewRendered: '✨ 渲染视图',
     emptyAlert: '内容为空', createFail: '创建失败：',
+    inviteNeeded: '此服务已启用邀请码，请在下方密码框填入邀请码后重试。',
     fullLink: '✅ 完整链接（含密钥）：', bareLink: '🔒 无密钥链接（密钥需单独发送）：',
     keyNote: '密钥：', keyNoteHint: '（建议与链接分开两条消息发送）',
     protectedNote: '🔑 已启用访问口令：读取时需输入口令。',
@@ -220,6 +221,7 @@ const I18N = {
     copyBtn: 'Copy to clipboard', copied: 'Copied ✓',
     viewRaw: '📄 Raw view', viewRendered: '✨ Rendered view',
     emptyAlert: 'Content is empty', createFail: 'Create failed: ',
+    inviteNeeded: 'This service requires an invite code. Enter it in the password field and retry.',
     fullLink: '✅ Full link (with key): ', bareLink: '🔒 Keyless link (send the key separately):',
     keyNote: 'Key: ', keyNoteHint: ' (recommended to send separately from the link)',
     protectedNote: '🔑 Password protected: a password is required to read.',
@@ -312,7 +314,15 @@ document.getElementById('create').onclick = async () => {
     })
   });
   const data = await r.json();
-  if (!r.ok) return alert(t('createFail') + (data.error || r.status));
+  if (!r.ok) {
+    if (data.invite_required) {
+      const pw = document.getElementById('password');
+      pw.focus();
+      pw.placeholder = t('inviteNeeded');
+      return alert(t('inviteNeeded'));
+    }
+    return alert(t('createFail') + (data.error || r.status));
+  }
   const keyPart = payload.split('.').slice(0, 2).join('.');
   const link = location.origin + '/' + data.id + '#' + keyPart;
   const box = document.getElementById('share');

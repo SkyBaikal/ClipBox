@@ -112,6 +112,17 @@ addColumnIfMissing('clips', 'max_reads', 'max_reads INTEGER NOT NULL DEFAULT 0')
 addColumnIfMissing('clips', 'read_count', 'read_count INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('clips', 'pw_rounds', 'pw_rounds INTEGER NOT NULL DEFAULT 120000');
 
+// 运营设置（KV）：邀请码等运行时可改的配置（管理后台读写，无需重启）
+db.exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)');
+function getSetting(key) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row ? row.value : null;
+}
+function setSetting(key, value) {
+  db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
+    .run(key, value);
+}
+
 // 索引必须在列迁移之后建（旧库的 ip 列由迁移补出）
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_clips_expires ON clips (expires_at);
@@ -188,9 +199,10 @@ app.use((req, res, next) => {
   const origSendFile = res.sendFile.bind(res);
   res.sendFile = (p, opts, cb) => {
     const nonce = nonces.get(res);
-    if (!nonce || !String(p).endsWith('index.html')) return origSendFile(p, opts, cb);
+    if (!nonce || !String(p).endsWith('.html')) return origSendFile(p, opts, cb);
     const html = fs.readFileSync(p, 'utf8').replace(/<script>/g, `<script nonce="${nonce}">`);
     res.set('Content-Type', 'text/html; charset=UTF-8');
+    res.set('Cache-Control', 'no-store');   // nonce 每请求不同，禁止缓存
     res.send(html);
   };
   next();
@@ -306,6 +318,15 @@ app.post('/api/clips', writeLimiter, async (req, res) => {
   }
   if (ciphertext.length > MAX_BODY) {
     return res.status(413).json({ error: 'too large' });
+  }
+  // 邀请码（运营设置，管理后台可开关）：设置后创建需携带正确 invite_code，读取不受限
+  const invite = getSetting('invite_code');
+  if (invite) {
+    const given = String((req.body || {}).invite_code || '');
+    const a = Buffer.from(given), b = Buffer.from(invite);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      return res.status(403).json({ error: 'invite code required or wrong', invite_required: true });
+    }
   }
   let ttlSeconds = parseInt(ttl, 10);
   if (!Number.isFinite(ttlSeconds) || ttlSeconds <= 0) ttlSeconds = 24 * 3600;
@@ -445,6 +466,28 @@ app.get('/api/admin/stats', requireAdmin, (req, res) => {
   res.json({ total, active, burning, ciphertext_bytes: bytes, max_per_ip: MAX_CLIPS_PER_IP });
 });
 
+// 运营设置：读取（邀请码状态；明文只在管理接口返回）
+app.get('/api/admin/settings', requireAdmin, (req, res) => {
+  const invite = getSetting('invite_code');
+  res.json({ invite_code: invite || '', invite_enabled: !!invite });
+});
+
+// 运营设置：更新（invite_code 传空字符串 = 关闭邀请码）
+app.post('/api/admin/settings', requireAdmin, (req, res) => {
+  const code = String((req.body || {}).invite_code || '').trim();
+  if (code) {
+    if (code.length < 4 || code.length > 64) {
+      return res.status(400).json({ error: 'invite_code must be 4-64 chars' });
+    }
+    setSetting('invite_code', code);
+    log('info', 'settings_invite_enabled', {});
+  } else {
+    db.prepare('DELETE FROM settings WHERE key = ?').run('invite_code');
+    log('info', 'settings_invite_disabled', {});
+  }
+  res.json({ invite_enabled: !!code });
+});
+
 // 列出 ID（只列元数据，绝不返回密文）
 app.get('/api/admin/list', requireAdmin, (req, res) => {
   const rows = db.prepare(
@@ -469,6 +512,11 @@ setInterval(() => {
   const n = db.prepare('DELETE FROM clips WHERE expires_at < ?').run(Date.now()).changes;
   if (n) log('info', 'cleanup_expired', { removed: n });
 }, 5 * 60 * 1000).unref();
+
+// 管理后台页（静态托管提供 /admin；CSP nonce 由统一中间件注入）
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
 
 // 路径直达：/:id（6 位 62 字符集）直接返回查看页；其余 404 到 API
 // 首页 / 同样显式返回（express.static index:false），统一走 sendFile 注入 nonce
