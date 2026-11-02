@@ -17,6 +17,11 @@ jobs:
           node-version: 22
           cache: npm
 
+      # 规避 npm 已知内部错误 "Exit handler never called!"（npm/cli#6624 等，
+      # 在 runner 的 npm 11 上偶发）。固定到 npm 10（LTS 配套的稳定版本线）。
+      - name: 固定 npm 版本
+        run: npm install -g npm@10
+
       - name: 安装依赖
         run: npm ci
 
