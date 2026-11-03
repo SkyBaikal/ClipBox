@@ -1,6 +1,6 @@
 {
   "name": "clipbox",
-  "version": "1.10.2",
+  "version": "1.10.3",
   "description": "Self-hosted zero-knowledge online clipboard",
   "main": "server.js",
   "scripts": {
