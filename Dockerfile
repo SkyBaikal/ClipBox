@@ -27,6 +27,8 @@ RUN mkdir -p /app/data && chown -R clipbox:clipbox /app
 USER clipbox
 
 # 数据目录（卷挂载点）
+# 注意：挂载宿主目录时必须先 chown 999:999 <宿主目录>，否则容器用户无写权限，启动即失败
+# （新版 db.js 会给出明确的 fatal 提示而不是误导性的 undefined 错误）
 ENV DB_PATH=/app/data/clipbox.db
 VOLUME /app/data
 
