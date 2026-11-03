@@ -135,7 +135,6 @@
   .hint { color: var(--text-dim); font-size: .85rem; }
   .err { color: var(--danger); }
   /* 固定角标：语言 + 主题切换 */
-  #lang { position: fixed; top: .6rem; right: 3.2rem; }
   #theme { position: fixed; top: .6rem; right: .8rem; font-size: 1rem; line-height: 1; padding: .3rem .5rem; }
   /* 移动端：控件换行铺满，按钮易点 */
   @media (max-width: 480px) {
@@ -150,7 +149,6 @@
 </style>
 </head>
 <body>
-<button id="lang" class="icon" title="切换语言 / Switch language">EN</button>
 <button id="theme" class="icon" title="切换主题 / Toggle theme">🌙</button>
 <h1><span class="brand">📎 ClipBox</span> <span data-i18n="title" style="font-size:.95rem;color:var(--text-dim);font-weight:500">零知识在线剪切板</span></h1>
 <p class="tagline" data-i18n="tagline">文本在浏览器内用 AES-256-GCM 加密后才上传，密钥只在链接 # 后面（不会发给服务器）。服务端只见密文。</p>
@@ -237,81 +235,10 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
 });
 
 // ---------- i18n（中英双语；localStorage 记忆，默认跟随浏览器语言） ----------
-const I18N = {
-  zh: {
-    title: '零知识在线剪切板',
-    tagline: '文本在浏览器内用 AES-GCM 加密后才上传，密钥只在链接 # 后面（不会发给服务器）。服务端只见密文。',
-    inputPlaceholder: '输入要分享的内容…',
-    expires: '过期：', ttl1h: '1 小时', ttl24h: '24 小时', ttl7d: '7 天',
-    burn: '阅后即焚', passwordPh: '访问口令（可选）', createBtn: '生成分享链接',
-    maxReadsPh: '阅读次数上限',
-    keyPrompt: '链接中不含密钥，请粘贴密钥（创建时 # 后面那段）：',
-    keyPh: '例如 a2V5.aml2…', pwPh: '访问口令（如有）', unlockBtn: '解密查看',
-    copyBtn: '复制到剪切板', copied: '已复制 ✓',
-    viewRaw: '📄 查看原文', viewRendered: '✨ 渲染视图',
-    emptyAlert: '内容为空', createFail: '创建失败：',
-    inviteNeeded: '此服务已启用邀请码，请在下方密码框填入邀请码后重试。',
-    fullLink: '✅ 完整链接（含密钥）：', bareLink: '🔒 无密钥链接（密钥需单独发送）：',
-    keyNote: '密钥：', keyNoteHint: '（建议与链接分开两条消息发送）',
-    protectedNote: '🔑 已启用访问口令：读取时需输入口令。',
-    noKey: '此链接未包含密钥。',
-    delTokenTitle: '🗑️ 删除令牌（请保存，凭此可删除此内容）：',
-    delTokenHint: '（令牌仅显示这一次，丢失后无法删除，内容将按期自动过期）',
-    delBtn: '删除此内容', delPrompt: '输入删除令牌以删除此内容：', delOk: '已删除 ✓', delFail: '删除失败：',
-    burnRead: '🔥 阅后即焚：此内容已销毁，刷新将无法再读。', contentIs: '内容如下：',
-    err401: '口令错误（该内容设有访问口令）',
-    err404: '不存在、已过期或已被读过（阅后即焚）',
-    errHeader: '❌ 无法解密或内容不可用：',
-    httpsTitle: '⚠️ 需要 HTTPS',
-    httpsBody: '<p>浏览器加密功能（Web Crypto）仅在 HTTPS 或 localhost 下可用。当前通过非安全连接访问，请使用 HTTPS 地址，或仅在 localhost 测试。</p>'
-  },
-  en: {
-    title: 'Zero-Knowledge Clipboard',
-    tagline: 'Text is encrypted in your browser with AES-GCM before upload. The key lives only after # in the link (never sent to the server). The server only ever sees ciphertext.',
-    inputPlaceholder: 'Enter content to share…',
-    expires: 'Expires: ', ttl1h: '1 hour', ttl24h: '24 hours', ttl7d: '7 days',
-    burn: 'Burn after reading', passwordPh: 'Access password (optional)', createBtn: 'Create link',
-    maxReadsPh: 'Max reads (opt.)',
-    keyPrompt: 'This link has no key. Paste the key (the part after # when it was created):',
-    keyPh: 'e.g. a2V5.aml2…', pwPh: 'Access password (if set)', unlockBtn: 'Decrypt',
-    copyBtn: 'Copy to clipboard', copied: 'Copied ✓',
-    viewRaw: '📄 Raw view', viewRendered: '✨ Rendered view',
-    emptyAlert: 'Content is empty', createFail: 'Create failed: ',
-    inviteNeeded: 'This service requires an invite code. Enter it in the password field and retry.',
-    fullLink: '✅ Full link (with key): ', bareLink: '🔒 Keyless link (send the key separately):',
-    keyNote: 'Key: ', keyNoteHint: ' (recommended to send separately from the link)',
-    protectedNote: '🔑 Password protected: a password is required to read.',
-    noKey: 'This link does not contain a key.',
-    delTokenTitle: '🗑️ Delete token (save it — required to delete this paste): ',
-    delTokenHint: ' (shown only once; without it the paste can only expire naturally)',
-    delBtn: 'Delete this paste', delPrompt: 'Enter the delete token:', delOk: 'Deleted ✓', delFail: 'Delete failed: ',
-    burnRead: '🔥 Burn-after-reading: content destroyed. Refreshing will not work.', contentIs: 'Content:',
-    err401: 'Wrong password (this content is password protected)',
-    err404: 'Not found, expired, or already read (burn after reading)',
-    errHeader: '❌ Cannot decrypt or content unavailable: ',
-    httpsTitle: '⚠️ HTTPS required',
-    httpsBody: '<p>Browser encryption (Web Crypto) is only available over HTTPS or localhost. Please use the HTTPS address, or test on localhost only.</p>'
-  }
-};
-let lang = localStorage.getItem('clipbox_lang') ||
-           (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en';
-if (!localStorage.getItem('clipbox_lang') && !(navigator.language || '').toLowerCase().startsWith('zh')) lang = 'en';
-if (localStorage.getItem('clipbox_lang')) lang = localStorage.getItem('clipbox_lang');
 
-const t = key => (I18N[lang] && I18N[lang][key]) || I18N.zh[key] || key;
-function applyI18n() {
-  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-  document.title = 'ClipBox · ' + t('title');
-  document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = t(el.dataset.i18n));
-  document.querySelectorAll('[data-i18n-ph]').forEach(el => el.placeholder = t(el.dataset.i18nPh));
-  document.getElementById('lang').textContent = lang === 'zh' ? 'EN' : '中文';
-}
-document.getElementById('lang').onclick = () => {
-  lang = lang === 'zh' ? 'en' : 'zh';
-  localStorage.setItem('clipbox_lang', lang);
-  applyI18n();
-};
-applyI18n();
+// 中文单语版：i18n 机制已移除，data-i18n 元素直接使用 HTML 初始中文文本
+document.title = 'ClipBox · 零知识在线剪切板';
+document.documentElement.lang = 'zh-CN';
 
 // ---------- 加密工具（Web Crypto，仅浏览器端） ----------
 const enc = new TextEncoder(), dec = new TextDecoder();
@@ -357,7 +284,7 @@ const ID = location.pathname.slice(1); // 6 位短 ID
 // ---------- 创建 ----------
 document.getElementById('create').onclick = async () => {
   const text = document.getElementById('text').value;
-  if (!text) return alert(t('emptyAlert'));
+  if (!text) return alert('内容为空');
   const payload = await encrypt(text);
   const r = await fetch('/api/clips', {
     method: 'POST',
@@ -378,26 +305,26 @@ document.getElementById('create').onclick = async () => {
     if (data.invite_required) {
       const pw = document.getElementById('password');
       pw.focus();
-      pw.placeholder = t('inviteNeeded');
+      pw.placeholder = '此服务已启用邀请码，请在下方密码框填入邀请码后重试。';
       // 邀请码模式：下一次点击时口令框的值作为 invite_code 发送（点击时实时读取，用户在 alert 后填码也能生效）
       pw.dataset.inviteMode = '1';
-      return alert(t('inviteNeeded'));
+      return alert('此服务已启用邀请码，请在下方密码框填入邀请码后重试。');
     }
-    return alert(t('createFail') + (data.error || r.status));
+    return alert('创建失败：' + (data.error || r.status));
   }
   const keyPart = payload.split('.').slice(0, 2).join('.');
   const link = location.origin + '/' + data.id + '#' + keyPart;
   const box = document.getElementById('share');
-  const protectedNote = data.protected ? '<br><span class="hint">' + t('protectedNote') + '</span>' : '';
+  const protectedNote = data.protected ? '<br><span class="hint">' + '🔑 已启用访问口令：读取时需输入口令。' + '</span>' : '';
   box.hidden = false;
   box.innerHTML =
-    '<div class="row"><span class="lbl">' + t('fullLink') + '</span><span class="val"><a id="lnk"></a></span></div>' +
-    '<div class="row"><span class="lbl">' + t('bareLink') + '</span><span class="val">' + location.origin + '/' + data.id + '</span>' +
-    '<div class="sub">' + t('keyNote') + '<span class="token">' + keyPart + '</span>' + t('keyNoteHint') + '</div></div>' +
+    '<div class="row"><span class="lbl">' + '✅ 完整链接（含密钥）：' + '</span><span class="val"><a id="lnk"></a></span></div>' +
+    '<div class="row"><span class="lbl">' + '🔒 无密钥链接：' + '</span><span class="val">' + location.origin + '/' + data.id + '</span>' +
+    '<div class="sub">' + '密钥：' + '<span class="token">' + keyPart + '</span>' + '（建议与链接分开两条消息发送）' + '</div></div>' +
     protectedNote +
     '<hr><div class="qrwrap"><div id="qr" style="background:#fff;padding:.6rem;border-radius:10px;display:inline-block"></div></div><hr>' +
-    '<div class="row"><span class="lbl">' + t('delTokenTitle') + '</span><span class="token">' + data.delete_token + '</span>' +
-    '<div class="sub">' + t('delTokenHint') + '</div></div>';
+    '<div class="row"><span class="lbl">' + '🗑️ 删除令牌（请保存，凭此可删除此内容）：' + '</span><span class="token">' + data.delete_token + '</span>' +
+    '<div class="sub">' + '（令牌仅显示这一次，丢失后无法删除，内容将按期自动过期）' + '</div></div>';
   box.querySelector('a').href = link;
   box.querySelector('a').textContent = link;
   // 删除令牌也存 sessionStorage：同会话内可直接一键删除（关标签即失效，不落盘）
@@ -414,7 +341,7 @@ document.getElementById('create').onclick = async () => {
 
 // ---------- 查看 ----------
 async function deleteClip(token, statusEl, btn) {
-  if (!confirm(t('delPrompt'))) return;
+  if (!confirm('输入删除令牌以删除此内容：')) return;
   try {
     const r = await fetch('/api/clips/' + encodeURIComponent(ID), {
       method: 'DELETE',
@@ -422,15 +349,15 @@ async function deleteClip(token, statusEl, btn) {
       body: JSON.stringify({ delete_token: token })
     });
     if (r.ok) {
-      btn.textContent = t('delOk');
+      btn.textContent = '已删除 ✓';
       btn.disabled = true;
       try { sessionStorage.removeItem('clipbox_del_' + ID); } catch (e) {}
-      statusEl.textContent = t('delOk');
+      statusEl.textContent = '已删除 ✓';
     } else {
-      statusEl.textContent = t('delFail') + r.status;
+      statusEl.textContent = '删除失败：' + r.status;
     }
   } catch (e) {
-    statusEl.textContent = t('delFail') + e.message;
+    statusEl.textContent = '删除失败：' + e.message;
   }
 }
 
@@ -444,12 +371,12 @@ async function fetchAndDecrypt(keyPart) {
       body: JSON.stringify({ pw: pw })  // 口令走 body，不进 URL/日志
     });
     const data = await r.json();
-    if (r.status === 401) throw new Error(t('err401'));
-    if (r.status === 404) throw new Error(t('err404'));
+    if (r.status === 401) throw new Error('口令错误（该内容设有访问口令）');
+    if (r.status === 404) throw new Error('不存在、已过期或已被读过（阅后即焚）');
     if (!r.ok) throw new Error(r.status);
     const ct = data.ciphertext.split('.').slice(2).join('.'); // 密文段
     const text = await decrypt(keyPart + '.' + ct);
-    status.textContent = data.burn ? t('burnRead') : t('contentIs');
+    status.textContent = data.burn ? '🔥 阅后即焚：此内容已销毁，刷新将无法再读。' : '内容如下：';
     const ta = document.getElementById('content');
     const md = document.getElementById('rendered');
     // 展示策略：内容像 Markdown（含标题/代码块/列表标记）→ 渲染；否则纯文本展示
@@ -479,9 +406,9 @@ async function fetchAndDecrypt(keyPart) {
         toggle.onclick = () => {
           showingRaw = !showingRaw;
           ta.hidden = !showingRaw; md.hidden = showingRaw;
-          toggle.textContent = showingRaw ? t('viewRendered') : t('viewRaw');
+          toggle.textContent = showingRaw ? '✨ 渲染视图' : '📄 查看原文';
         };
-        toggle.textContent = t('viewRaw');
+        toggle.textContent = '📄 查看原文';
       } catch (e) { md.hidden = true; ta.hidden = false; }
     } else {
       md.hidden = true; ta.hidden = false;
@@ -490,8 +417,8 @@ async function fetchAndDecrypt(keyPart) {
     const btn = document.getElementById('copy');
     btn.hidden = false;
     btn.onclick = () => navigator.clipboard.writeText(text).then(() => {
-      btn.textContent = t('copied');
-      setTimeout(() => { btn.textContent = t('copyBtn'); }, 1500);
+      btn.textContent = '已复制 ✓';
+      setTimeout(() => { btn.textContent = '复制到剪切板'; }, 1500);
     });
     // 创建者自删：同会话创建的（sessionStorage 有令牌）显示一键删除；否则可手动输入令牌
     const delBtn = document.getElementById('del');
@@ -518,7 +445,7 @@ async function fetchAndDecrypt(keyPart) {
     if (location.hash) history.replaceState(null, '', location.pathname);
     return true;
   } catch (e) {
-    status.textContent = t('errHeader') + e.message;
+    status.textContent = '❌ 无法解密或内容不可用：' + e.message;
     status.className = 'err';
     return false;
   }
@@ -534,7 +461,7 @@ if (ID.length === 6) {
     fetchAndDecrypt(location.hash.slice(1));
   } else {
     // 模式二：手动输入密钥
-    status.textContent = t('noKey');
+    status.textContent = '此链接未包含密钥。';
     document.getElementById('keybox').hidden = false;
     document.getElementById('unlock').onclick = () => {
       const keyPart = document.getElementById('keyinput').value.trim();

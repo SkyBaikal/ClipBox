@@ -1,6 +1,6 @@
 # ClipBox · 零知识在线剪切板
 
-[中文](README.md) | [English](README.en.md) | [部署指南](DEPLOY.md)
+[部署指南](DEPLOY.md)
 
 自托管的文本分享服务：内容在**浏览器内**用 AES-256-GCM 加密后才上传，密钥只存在于分享链接的 `#` 片段中（fragment 不会随 HTTP 请求发送），服务端全程只接触密文——**服务器被拖库也拿不到明文**。
 

@@ -68,8 +68,7 @@
 <body>
 <div class="row" style="justify-content:space-between;align-items:flex-start">
   <h1><span class="brand">🛠️ ClipBox</span> <span data-i18n="adminTitle" style="font-size:.95rem;color:var(--text-dim);font-weight:500">管理后台</span></h1>
-  <button id="lang" class="ghost" style="margin-left:auto">EN</button>
-</div>
+  </div>
 <p class="hint" data-i18n="subtitle">服务端只处理元数据；所有内容均为密文，此处也无法查看内容明文。</p>
 
 <!-- 登录 -->
@@ -162,88 +161,9 @@
 
 <script data-cfasync="false">
 const $ = id => document.getElementById(id);
-// ---------- i18n（复用主站模式：localStorage + 自动检测） ----------
-const ADMIN_I18N = {
-  zh: {
-    adminTitle: '管理后台', subtitle: '服务端只处理元数据；所有内容均为密文，此处也无法查看内容明文。',
-    adminToken: '管理员令牌', adminTokenHint: '（即服务端 ADMIN_TOKEN）',
-    loginBtn: '登录', tokenNote: '令牌只存 sessionStorage（关闭标签即失效），不落盘、不进 Cookie。',
-    tabOverview: '📊 概览', tabInvites: '🎫 邀请码', tabClips: '📋 内容', tabBackups: '💾 备份',
-    healthTitle: '❤️ 服务健康', cleanupTitle: '🧹 批量清理',
-    cleanupHint: '删除操作不可恢复；只影响服务端密文与元数据。',
-    cleanExpired: '清除全部已过期', cleanBurned: '清除焚毁残留', cleanAll: '⚠️ 清空全部内容',
-    invitesTitle: '🎫 邀请码列表',
-    invitesHint: '启用后创建内容需携带任一有效邀请码；读取不受限。单码可独立作废（泄露/人员变动时精准吊销）。',
-    newInvitePh: '新邀请码（留空则随机生成）', inviteLabelPh: '备注（如：同事群）', addBtn: '添加',
-    clipsTitle: '📋 内容列表（最近 500 条，仅元数据）',
-    backupsTitle: '💾 备份文件', backupNow: '立即备份',
-    backupHint: '加密备份（.db.enc）恢复方式：', logout: '退出登录', backHome: '← 返回首页',
-    refresh: '刷新', deleted: '已删除 ', items: ' 条',
-    thCode: '邀请码', thLabel: '备注', thCreated: '创建时间', thState: '状态',
-    revoked: '已作废', active: '有效', revoke: '作废', restore: '恢复',
-    noInvites: '暂无邀请码（任何人可创建）',
-    thId: 'ID', thSize: '大小', thProt: '保护', thExpired: '过期', del: '删',
-    alive: '存活', expired: '已过期', empty: '空',
-    thFile: '文件', thTime: '生成时间', noBackups: '暂无备份',
-    healthy: '✅ 正常', uptime: '运行时长', dbSize: 'DB 大小', disk: '磁盘余量',
-    reqTotal: '累计请求', err5xx: '5xx 错误', state: '状态',
-    updated: '更新于 ', refreshHint: '（切走再切回本页可刷新）', healthFail: '健康检查失败',
-    days: '天', hours: '时',
-    confirmClean: { expired: '确认删除全部已过期内容？不可恢复。', burned: '确认删除焚毁残留？不可恢复。', all: '确认清空全部内容（含未过期）？不可恢复。' },
-    confirmRevoke: '作废此邀请码？使用它的人将无法再创建新内容。',
-    confirmDel: '删除 ', confirmDelTail: '？不可恢复。',
-    addFail: '添加失败：', delFail: '删除失败：', backupDone: '备份完成：', backupFail: '备份失败：',
-    loggedOut: '已退出。', verifying: '验证中…', loginFail: '登录失败：',
-  },
-  en: {
-    adminTitle: 'Admin Panel', subtitle: 'Server handles metadata only; all content is ciphertext and cannot be viewed here.',
-    adminToken: 'Admin token', adminTokenHint: ' (server ADMIN_TOKEN)',
-    loginBtn: 'Log in', tokenNote: 'Token is kept in sessionStorage only (cleared when tab closes); never persisted or in cookies.',
-    tabOverview: '📊 Overview', tabInvites: '🎫 Invites', tabClips: '📋 Clips', tabBackups: '💾 Backups',
-    healthTitle: '❤️ Service health', cleanupTitle: '🧹 Bulk cleanup',
-    cleanupHint: 'Deletions are irreversible; only ciphertext and metadata on the server are affected.',
-    cleanExpired: 'Purge expired', cleanBurned: 'Purge burned', cleanAll: '⚠️ Wipe all clips',
-    invitesTitle: '🎫 Invite codes',
-    invitesHint: 'When enabled, creating clips requires any valid invite code; reading is unrestricted. Each code can be revoked independently.',
-    newInvitePh: 'New code (blank = random)', inviteLabelPh: 'Label (e.g. team)', addBtn: 'Add',
-    clipsTitle: '📋 Clips (latest 500, metadata only)',
-    backupsTitle: '💾 Backups', backupNow: 'Back up now',
-    backupHint: 'Restore an encrypted backup (.db.enc):', logout: 'Log out', backHome: '← Back to site',
-    refresh: 'Refresh', deleted: 'Deleted ', items: ' item(s)',
-    thCode: 'Code', thLabel: 'Label', thCreated: 'Created', thState: 'State',
-    revoked: 'Revoked', active: 'Active', revoke: 'Revoke', restore: 'Restore',
-    noInvites: 'No invite codes (anyone can create)',
-    thId: 'ID', thSize: 'Size', thProt: 'Prot', thExpired: 'Expires', del: 'Del',
-    alive: 'alive', expired: 'expired', empty: 'Empty',
-    thFile: 'File', thTime: 'Created', noBackups: 'No backups yet',
-    healthy: '✅ Healthy', uptime: 'Uptime', dbSize: 'DB size', disk: 'Disk free',
-    reqTotal: 'Requests', err5xx: '5xx errors', state: 'Status',
-    updated: 'Updated ', refreshHint: ' (switch away and back to refresh)', healthFail: 'Health check failed',
-    days: 'd', hours: 'h',
-    confirmClean: { expired: 'Delete all expired clips? Irreversible.', burned: 'Delete burned remnants? Irreversible.', all: 'Wipe ALL clips (including unexpired)? Irreversible.' },
-    confirmRevoke: 'Revoke this invite code? Holders will no longer be able to create clips.',
-    confirmDel: 'Delete ', confirmDelTail: '? Irreversible.',
-    addFail: 'Add failed: ', delFail: 'Delete failed: ', backupDone: 'Backup done: ', backupFail: 'Backup failed: ',
-    loggedOut: 'Logged out.', verifying: 'Verifying…', loginFail: 'Login failed: ',
-  }
-};
-let lang = localStorage.getItem('clipbox_lang') ||
-  ((navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en');
-if (localStorage.getItem('clipbox_lang')) lang = localStorage.getItem('clipbox_lang');
-const t = k => (ADMIN_I18N[lang] && ADMIN_I18N[lang][k]) || ADMIN_I18N.zh[k] || k;
-function applyI18n() {
-  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
-  document.title = 'ClipBox ' + t('adminTitle');
-  document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = t(el.dataset.i18n));
-  document.querySelectorAll('[data-i18n-ph]').forEach(el => el.placeholder = t(el.dataset.i18nPh));
-  $('lang').textContent = lang === 'zh' ? 'EN' : '中文';
-}
-$('lang').addEventListener('click', () => {
-  lang = lang === 'zh' ? 'en' : 'zh';
-  localStorage.setItem('clipbox_lang', lang);
-  applyI18n();
-});
-applyI18n();
+// 中文单语版：i18n 机制已移除，data-i18n 元素直接使用 HTML 初始中文文本
+document.title = 'ClipBox 管理后台';
+document.documentElement.lang = 'zh-CN';
 
 const TOKEN_KEY = 'clipbox_admin_token';
 let token = sessionStorage.getItem(TOKEN_KEY) || '';
@@ -290,20 +210,20 @@ function logout(silent) {
   token = '';
   $('panel').style.display = 'none';
   $('login').style.display = 'block';
-  if (!silent) $('loginMsg').textContent = t('loggedOut');
+  if (!silent) $('loginMsg').textContent = '已退出。';
 }
 
 async function login() {
   token = $('token').value.trim();
   if (!token) return;
   try {
-    $('loginMsg').textContent = t('verifying');
+    $('loginMsg').textContent = '验证中…';
     await api('/api/admin/stats');
     sessionStorage.setItem(TOKEN_KEY, token);
     $('loginMsg').textContent = '';
     showPanel();
   } catch (e) {
-    $('loginMsg').innerHTML = '<span class="err">' + t('loginFail') + e.message + '</span>';
+    $('loginMsg').innerHTML = '<span class="err">' + '登录失败：' + e.message + '</span>';
   }
 }
 $('token').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
@@ -319,9 +239,9 @@ async function showPanel() {
 async function loadStats() {
   const s = await api('/api/admin/stats');
   $('stats').innerHTML = [
-    [t('state').replace('Status','Active').replace('状态','活跃'), s.active], [t('thSize').replace('Size','Total').replace('大小','总数'), s.total],
-    ['🔥 ' + t('del').replace('Del','burning').replace('删','焚毁中'), s.burning],
-    [t('dbSize').replace('DB size','Ciphertext').replace('DB 大小','密文总量'), (s.ciphertext_bytes / 1024).toFixed(1) + ' KB'],
+    ['状态'.replace('Status','Active').replace('状态','活跃'), s.active], ['大小'.replace('Size','Total').replace('大小','总数'), s.total],
+    ['🔥 ' + '删'.replace('Del','burning').replace('删','焚毁中'), s.burning],
+    ['DB 大小'.replace('DB size','Ciphertext').replace('DB 大小','密文总量'), (s.ciphertext_bytes / 1024).toFixed(1) + ' KB'],
     ['IP ' + (lang === 'zh' ? '上限' : 'limit'), s.max_per_ip]
   ].map(([k, v]) => `<div class="stat"><b>${v}</b><span>${k}</span></div>`).join('');
 }
@@ -331,21 +251,25 @@ async function loadHealth() {
     const [h, m] = await Promise.all([fetch('/healthz').then(r => r.json()), fetch('/metricsz').then(r => r.json())]);
     const up = m.uptime_s, day = Math.floor(up / 86400), hr = Math.floor(up % 86400 / 3600);
     $('health').innerHTML = [
-      [t('state'), t('healthy')], [t('uptime'), (day ? day + t('days') : '') + hr + t('hours')],
-      [t('dbSize'), (m.db_bytes / 1024).toFixed(0) + ' KB'], [t('disk'), m.disk_free_mb + ' MB'],
-      [t('reqTotal'), m.requests], [t('err5xx'), m.errors_5xx]
+      ['状态', '✅ 正常'], ['运行时长', (day ? day + '天' : '') + hr + '时'],
+      ['DB 大小', (m.db_bytes / 1024).toFixed(0) + ' KB'], ['磁盘余量', m.disk_free_mb + ' MB'],
+      ['累计请求', m.requests], ['5xx 错误', m.errors_5xx]
     ].map(([k, v]) => `<div class="stat"><b style="font-size:1.1rem">${v}</b><span>${k}</span></div>`).join('');
-    $('healthTime').textContent = t('updated') + new Date().toLocaleTimeString() + t('refreshHint');
+    $('healthTime').textContent = '更新于 ' + new Date().toLocaleTimeString() + '（切走再切回本页可刷新）';
   } catch (e) {
-    $('health').innerHTML = '<div class="stat"><b style="font-size:1rem" class="err">' + t('healthFail') + '</b><span>' + e.message + '</span></div>';
+    $('health').innerHTML = '<div class="stat"><b style="font-size:1rem" class="err">' + '健康检查失败' + '</b><span>' + e.message + '</span></div>';
   }
 }
 
 async function bulkCleanup(kind) {
-  if (!confirm(t('confirmClean')[kind])) return;
+  if (!confirm(({
+      expired: '确认删除全部已过期内容？不可恢复。',
+      burned: '确认删除焚毁残留？不可恢复。',
+      all: '确认清空全部内容（含未过期）？不可恢复。'
+    })[kind])) return;
   try {
     const r = await api('/api/admin/cleanup', { method: 'POST', body: JSON.stringify({ kind }) });
-    $('cleanMsg').innerHTML = '<span class="ok">' + t('deleted') + r.deleted + t('items') + '</span>';
+    $('cleanMsg').innerHTML = '<span class="ok">' + '已删除 ' + r.deleted + ' 条' + '</span>';
     loadStats(); loadList();
   } catch (e) { $('cleanMsg').innerHTML = '<span class="err">' + e.message + '</span>'; }
 }
@@ -353,16 +277,16 @@ async function bulkCleanup(kind) {
 // ---------- 邀请码（多码） ----------
 async function loadInvites() {
   const d = await api('/api/admin/invites');
-  $('inviteList').innerHTML = '<tr><th>' + t('thCode') + '</th><th>' + t('thLabel') + '</th><th>' + t('thCreated') + '</th><th>' + t('thState') + '</th><th></th></tr>' +
+  $('inviteList').innerHTML = '<tr><th>' + '邀请码' + '</th><th>' + '备注' + '</th><th>' + '创建时间' + '</th><th>' + '状态' + '</th><th></th></tr>' +
     (d.invites.length ? d.invites.map(i => `<tr>
       <td><code>${i.code}</code></td>
       <td>${i.label || '—'}</td>
       <td>${new Date(i.created_at).toLocaleDateString()}</td>
-      <td><span class="badge ${i.revoked ? 'off' : 'on'}">${i.revoked ? t('revoked') : t('active')}</span></td>
+      <td><span class="badge ${i.revoked ? 'off' : 'on'}">${i.revoked ? '已作废' : '有效'}</span></td>
       <td>${i.revoked
-        ? `<button class="ghost" data-op="restore" data-id="${i.id}">${t('restore')}</button>`
-        : `<button class="ghost" data-op="revoke" data-id="${i.id}">${t('revoke')}</button>`}</td>
-    </tr>`).join('') : `<tr><td colspan="5" class="hint">${t('noInvites')}</td></tr>`);
+        ? `<button class="ghost" data-op="restore" data-id="${i.id}">${'恢复'}</button>`
+        : `<button class="ghost" data-op="revoke" data-id="${i.id}">${'作废'}</button>`}</td>
+    </tr>`).join('') : `<tr><td colspan="5" class="hint">${'暂无邀请码（任何人可创建）'}</td></tr>`);
 }
 
 async function addInvite() {
@@ -371,11 +295,11 @@ async function addInvite() {
     await api('/api/admin/invites', { method: 'POST', body: JSON.stringify({ code, label: $('inviteLabel').value.trim() }) });
     $('newInvite').value = ''; $('inviteLabel').value = '';
     loadInvites();
-  } catch (e) { alert(t('addFail') + e.message); }
+  } catch (e) { alert('添加失败：' + e.message); }
 }
 
 async function inviteOp(op, id) {
-  if (op === 'revoke' && !confirm(t('confirmRevoke'))) return;
+  if (op === 'revoke' && !confirm('作废此邀请码？使用它的人将无法再创建新内容。')) return;
   await api('/api/admin/invites/' + id, { method: 'POST', body: JSON.stringify({ op }) });
   loadInvites();
 }
@@ -388,42 +312,42 @@ function fmtTime(ts) {
 async function loadList() {
   const d = await api('/api/admin/list');
   const now = Date.now();
-  $('list').innerHTML = '<tr><th>' + t('thId') + '</th><th>' + t('thSize') + '</th><th>' + t('thProt') + '</th><th>' + t('thState') + '</th><th>' + t('thExpired') + '</th><th></th></tr>' +
+  $('list').innerHTML = '<tr><th>' + 'ID' + '</th><th>' + '大小' + '</th><th>' + '保护' + '</th><th>' + '状态' + '</th><th>' + '过期' + '</th><th></th></tr>' +
     d.clips.map(c => `<tr>
       <td><code><a href="/${c.id}" target="_blank">${c.id}</a></code></td>
       <td>${c.size} B</td>
       <td>${c.protected ? '🔑' : c.burn ? '🔥' : ''}</td>
-      <td>${c.expires_at > now ? t('alive') : t('expired')}</td>
+      <td>${c.expires_at > now ? '存活' : '确认删除全部已过期内容？不可恢复。'}</td>
       <td>${fmtTime(c.expires_at)}</td>
-      <td><button class="ghost" data-del="${c.id}">${t('del')}</button></td>
-    </tr>`).join('') || `<tr><td colspan="6" class="hint">${t('empty')}</td></tr>`;
+      <td><button class="ghost" data-del="${c.id}">${'删'}</button></td>
+    </tr>`).join('') || `<tr><td colspan="6" class="hint">${'空'}</td></tr>`;
 }
 
 async function delClip(id) {
-  if (!confirm(t('confirmDel') + id + t('confirmDelTail'))) return;
+  if (!confirm('删除 ' + id + '？不可恢复。')) return;
   try { await api('/api/admin/clips/' + id, { method: 'DELETE' }); loadList(); loadStats(); }
-  catch (e) { alert(t('delFail') + e.message); }
+  catch (e) { alert('删除失败：' + e.message); }
 }
 
 // ---------- 备份 ----------
 async function loadBackups() {
   try {
     const d = await api('/api/admin/backups');
-    $('backupList').innerHTML = '<tr><th>' + t('thFile') + '</th><th>' + t('thSize') + '</th><th>' + t('thTime') + '</th></tr>' +
+    $('backupList').innerHTML = '<tr><th>' + '文件' + '</th><th>' + '大小' + '</th><th>' + '生成时间' + '</th></tr>' +
       (d.backups.length ? d.backups.map(b => `<tr>
         <td><code>${b.name}</code></td>
         <td>${(b.size / 1024).toFixed(1)} KB</td>
         <td>${fmtTime(b.mtime)}</td>
-      </tr>`).join('') : `<tr><td colspan="3" class="hint">${t('noBackups')}</td></tr>`);
+      </tr>`).join('') : `<tr><td colspan="3" class="hint">${'暂无备份'}</td></tr>`);
   } catch (e) { $('backupList').innerHTML = '<tr><td class="err">' + e.message + '</td></tr>'; }
 }
 
 async function triggerBackup() {
   try {
     const r = await api('/api/admin/backup', { method: 'POST' });
-    alert(t('backupDone') + r.file);
+    alert('备份完成：' + r.file);
     loadBackups();
-  } catch (e) { alert(t('backupFail') + e.message); }
+  } catch (e) { alert('备份失败：' + e.message); }
 }
 
 // 已有会话令牌直接进面板
