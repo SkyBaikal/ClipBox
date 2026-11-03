@@ -34,9 +34,10 @@
   button { padding: .5rem 1.1rem; border: 0; border-radius: 10px; background: linear-gradient(120deg, var(--accent) 0%, color-mix(in srgb, var(--accent) 70%, #6366f1) 100%); color: #fff; cursor: pointer; font-weight: 550; box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 28%, transparent); transition: transform .15s, filter .15s; }
   button:hover { filter: brightness(1.06); transform: translateY(-1px); }
   button:active { transform: translateY(0); }
-  html.dark button { color: #06231f; }
-  html.dark button.secondary { color: var(--text); }
-  button.secondary { background: var(--code-bg); color: var(--text); border: 1px solid var(--border); }
+    /* 深色文字只给渐变主按钮；icon/secondary/tab 在暗色下保持浅色文字 */
+  html.dark button:not([class]) { color: #06231f; }
+  html.dark button.icon,   html.dark button.danger { color: #fff; }
+    button.secondary { background: var(--code-bg); color: var(--text); border: 1px solid var(--border); }
   button.danger { background: var(--danger); color: #fff; }
   button.ghost { background: none; border: 1px solid var(--border); color: var(--text); padding: .3rem .6rem; border-radius: 6px; font-size: .85rem; }
   .hint { color: var(--text-dim); font-size: .85rem; }
@@ -55,6 +56,7 @@
   /* 标签页 */
   .tabs { display: flex; gap: .3rem; margin: 1rem 0 .5rem; flex-wrap: wrap; }
   .tab { padding: .45rem 1rem; border-radius: 8px 8px 0 0; cursor: pointer; background: none; border: 1px solid transparent; color: var(--text-dim); background: color-mix(in srgb, var(--card) 55%, transparent); }
+  html.dark .tab { color: var(--text); opacity: .75; }
   .tab.active { background: var(--card); border-color: var(--border); color: var(--text); font-weight: 500; }
   .tabpage { display: none; }
   .tabpage.active { display: block; }

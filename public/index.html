@@ -100,7 +100,9 @@
     box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 34%, transparent);
   }
   button:active { transform: translateY(0); filter: brightness(.97); }
-  html.dark button { color: #06231f; }
+    /* 深色文字只给渐变主按钮；icon/secondary/tab 在暗色下保持浅色文字 */
+  html.dark button:not([class]) { color: #06231f; }
+  html.dark button.icon,   html.dark button.danger { color: #fff; }
   button.secondary { background: var(--code-bg); color: var(--text); border: 1px solid var(--border); }
   button.secondary:hover { border-color: var(--accent); }
   button.danger, html.dark button.danger { background: var(--danger); color: #fff; border: 0; }
@@ -351,7 +353,11 @@ document.getElementById('create').onclick = async () => {
       ciphertext: payload,
       burn: document.getElementById('burn').checked,
       ttl: parseInt(document.getElementById('ttl').value, 10),
-      max_reads: parseInt(document.getElementById('maxreads').value, 10) || 0
+      max_reads: parseInt(document.getElementById('maxreads').value, 10) || 0,
+      // 邀请码模式（invite_required 后）：口令框的值实时作为 invite_code 发送；否则作为访问口令
+      ...(document.getElementById('password').dataset.inviteMode
+        ? { invite_code: document.getElementById('password').value.trim() || undefined }
+        : { password: document.getElementById('password').value.trim() || undefined })
     })
   });
   const data = await r.json();
@@ -360,6 +366,8 @@ document.getElementById('create').onclick = async () => {
       const pw = document.getElementById('password');
       pw.focus();
       pw.placeholder = t('inviteNeeded');
+      // 邀请码模式：下一次点击时口令框的值作为 invite_code 发送（点击时实时读取，用户在 alert 后填码也能生效）
+      pw.dataset.inviteMode = '1';
       return alert(t('inviteNeeded'));
     }
     return alert(t('createFail') + (data.error || r.status));
